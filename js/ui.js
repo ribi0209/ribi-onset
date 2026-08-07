@@ -181,6 +181,65 @@ export function lightbox(url, name){
   document.body.appendChild(ov);
 }
 
+/* ---------------- 모니터 OCR 확인창 ---------------- */
+
+/**
+ * 판독 결과를 보여주고 사용자가 고친 뒤 적용하게 한다.
+ * OCR 은 100% 가 아니므로 절대 자동 적용하지 않는다.
+ * @returns {Promise<object|null>} 적용할 { key: value } 또는 null(취소)
+ */
+export function ocrReview(fields, labels, rawText, confidence){
+  return new Promise(res => {
+    const keys = Object.keys(fields);
+    const picked = {};
+    const inputs = {};
+
+    const rows = keys.map(k => {
+      const chk = el('input', { type:'checkbox', class:'ocr-chk' });
+      chk.checked = true;
+      const inp = el('input', { class:'inp mini', value: fields[k] });
+      inputs[k] = inp; picked[k] = chk;
+      return el('label', { class:'ocr-row' }, [
+        chk,
+        el('span', { class:'ocr-k', text: labels[k] || k }),
+        inp,
+      ]);
+    });
+
+    const rawBox = el('pre', { class:'ocr-raw', text: rawText || '' , hidden:'' });
+
+    const body = keys.length
+      ? el('div', { class:'ocr-list' }, rows)
+      : el('p', { class:'dim', text:'읽어낸 값이 없습니다. 오버레이가 잘리지 않게 다시 찍어보세요.' });
+
+    const close = (v) => { ov.remove(); res(v); };
+    const ov = el('div', { class:'overlay', onclick:(e)=>{ if(e.target===ov) close(null); } }, [
+      el('div', { class:'dialog wide' }, [
+        el('h3', { text:'모니터 판독 결과' }),
+        el('p', { class:'dim tiny', text:
+          `인식 신뢰도 ${confidence!=null ? confidence.toFixed(0)+'%' : '—'} · 값을 확인하고 고친 뒤 적용하세요. 체크 해제하면 그 항목은 건드리지 않습니다.` }),
+        body,
+        el('div', { class:'row between gap' }, [
+          el('button', { class:'btn ghost tiny', text:'원문 보기', onclick:(e)=>{
+            rawBox.hidden = !rawBox.hidden;
+            e.target.textContent = rawBox.hidden ? '원문 보기' : '원문 숨기기';
+          }}),
+          el('div', { class:'row gap' }, [
+            el('button', { class:'btn ghost', text:'취소', onclick:()=>close(null) }),
+            el('button', { class:'btn primary', text:'적용', disabled: keys.length ? null : '', onclick:()=>{
+              const out = {};
+              for (const k of keys) if (picked[k].checked && inputs[k].value.trim()) out[k] = inputs[k].value.trim();
+              close(out);
+            }}),
+          ])
+        ]),
+        rawBox,
+      ])
+    ]);
+    document.body.appendChild(ov);
+  });
+}
+
 /* ---------------- 링크(다른 레코드 연결) 위젯 ---------------- */
 
 async function linkWidget(field, rec, onDirty){

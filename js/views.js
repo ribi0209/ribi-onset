@@ -9,7 +9,7 @@ import {
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
-  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField
+  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview
 } from './ui.js';
 import { ingest, pickFiles } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
@@ -276,6 +276,47 @@ export async function entityView(root, entKey){
   else editPane.appendChild(el('div', { class:'empty', text:`좌측에서 ${cfg.label}을(를) 선택하거나 새로 만드세요.` }));
 }
 
+/* ===================== 모니터 사진 OCR ===================== */
+
+/**
+ * 테이크의 모니터 사진을 읽어 카메라 정보를 채운다.
+ * 판독값은 확인창을 거쳐야만 반영된다 (잘못된 클립 번호가 조용히 들어가는 게 가장 위험).
+ */
+async function runMonitorOCR(take, save, redraw){
+  if (!take.monitor || !take.monitor.mid) return;
+  const p = progress(); p.set('준비 중', 3);
+  try {
+    const OCR = await import('./ocr.js');
+    const media = await DB.getMedia(take.monitor.mid);
+    if (!media || !media.blob) throw new Error('사진을 찾을 수 없습니다');
+
+    const { text, confidence, fields } = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
+    p.done();
+
+    // 레퍼런스 목록 표기에 맞춰 스냅
+    const snapped = OCR.parseMonitor(text, {
+      fps: refList('fps'), shutters: refList('shutters'), tStops: refList('tStops'),
+      isoEi: refList('isoEi'), whiteBalance: refList('whiteBalance'), ndFilters: refList('ndFilters'),
+    });
+
+    const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence);
+    if (!picked) return;
+
+    let n = 0;
+    for (const k of OCR.TAKE_KEYS) if (picked[k]){ take[k] = picked[k]; n++; }
+    if (picked.cc){
+      take.note = [take.note, 'CC ' + picked.cc].filter(Boolean).join(' ');
+      n++;
+    }
+    save();
+    if (redraw) await redraw();
+    toast(n ? `${n}개 항목 입력됨` : '적용된 항목 없음', n ? 'ok' : 'warn');
+  } catch (e){
+    p.done();
+    toast('판독 실패: ' + e.message, 'err', 5000);
+  }
+}
+
 /* ===================== 씬 하위 컷 / 테이크 ===================== */
 
 async function cutsSection(scene, onChange){
@@ -395,7 +436,10 @@ async function cutsSection(scene, onChange){
         const tk = cut.takes[i];
         const row = el('div', { class:'take-row' });
         row.appendChild(el('span', { class:'tk-mon' }, [
-          photoTile(() => tk.monitor, (v) => { tk.monitor = v; }, 'plate', save, { label:'모니터' })
+          photoTile(() => tk.monitor, (v) => { tk.monitor = v; }, 'plate', save, {
+            label:'모니터',
+            onShot: () => runMonitorOCR(tk, save, drawTakes),
+          })
         ]));
         for (const f of TAKE_FIELDS){
           row.appendChild(el('span', { class:'tk-'+f.k }, [ miniField(f, tk, save) ]));
@@ -566,7 +610,22 @@ export async function settingsView(root){
   const refs = await DB.getRefs();
   const wrap = el('div', { class:'pane single' }, [
     el('h2', { text:'Setting' }),
-    el('p', { class:'dim tiny', text:'드롭다운 목록은 모든 프로젝트가 함께 씁니다. 현장에서 새 값을 입력하면 자동으로 여기에 추가됩니다.' })
+    el('p', { class:'dim tiny', text:'드롭다운 목록은 모든 프로젝트가 함께 씁니다. 현장에서 새 값을 입력하면 자동으로 여기에 추가됩니다.' }),
+
+    el('h3', { class:'sect', text:'모니터 OCR' }),
+    el('p', { class:'dim tiny', text:
+      '테이크의 모니터 사진에서 캠 롤·클립·TC·FPS·셔터·EI·WB 를 읽어옵니다. 엔진(약 7MB)은 첫 사용 때 내려받고 그 뒤로는 오프라인에서도 동작합니다. 현장 나가기 전에 미리 받아두세요.' }),
+    el('div', { class:'row gap wrap' }, [
+      el('button', { class:'btn', text:'OCR 엔진 미리 받기', onclick: async (e) => {
+        const p = progress(); p.set('내려받는 중', 3);
+        try {
+          const OCR = await import('./ocr.js');
+          await OCR.loadEngine((m, pc) => p.set(m, pc));
+          toast('OCR 엔진 준비 완료 — 이제 오프라인에서도 판독됩니다', 'ok', 4000);
+        } catch (err){ toast('내려받기 실패: ' + err.message, 'err', 5000); }
+        finally { p.done(); }
+      }}),
+    ]),
   ]);
 
   const save = async () => { await DB.setRefs(refs); setRefsCache(await DB.getRefs()); };

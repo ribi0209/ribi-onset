@@ -357,3 +357,14 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
 .progress{ flex:1; max-width:340px; height:9px; background:var(--bg3); border-radius:5px; overflow:hidden; }
 .progress i{ display:block; height:100%; background:var(--ok); }
 .proj-head .grow{ min-width:0; }
+
+/* ---------- 모니터 OCR 확인창 ---------- */
+.ocr-list{ display:flex; flex-direction:column; gap:6px; margin:10px 0 14px; max-height:46vh; overflow:auto; }
+.ocr-row{ display:grid; grid-template-columns:22px 90px 1fr; align-items:center; gap:9px; cursor:pointer; }
+.ocr-chk{ width:20px; height:20px; accent-color:var(--accent); }
+.ocr-k{ font-size:12px; color:var(--dim); font-weight:700; }
+.ocr-raw{
+  margin-top:10px; padding:10px; max-height:200px; overflow:auto;
+  background:var(--bg); border:1px solid var(--line); border-radius:8px;
+  font-size:11px; line-height:1.5; white-space:pre-wrap; color:var(--dim);
+}
