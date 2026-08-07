@@ -142,7 +142,8 @@ export const PROJECT_SCHEMA = {
       { k:'assistantDirector', label:'조감독', t:'text' },
       { k:'bDirector', label:'B감독', t:'text' },
       { k:'vfxSupervisor', label:'VFX 슈퍼바이저', t:'text' },
-      { k:'vfxProducer', label:'VFX 프로듀서', t:'text' },
+      { k:'aiSupervisor', label:'AI 슈퍼바이저', t:'text' },
+      { k:'vfxAssist', label:'VFX 어시스트', t:'text' },
     ]},
     { title:'DELIVERY SPEC · 딜리버리 스펙', fields:[
       { k:'deliveryResolution', label:'해상도', t:'combo', ref:'deliveryResolutions' },

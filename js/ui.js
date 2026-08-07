@@ -121,17 +121,17 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
         }));
       }
     } else {
-      // 타일 전체가 촬영 버튼
-      box.classList.add('tap');
-      box.addEventListener('click', () => grab(true));
+      // 촬영 / 갤러리 선택 둘 다 제공
       box.appendChild(el('div', { class:'photo-empty' }, [
-        el('span', { class:'cam-ico', text:'📷' }),
-        el('span', { class:'cam-lbl', text: opts.label || '탭하면 촬영' }),
+        el('button', { class:'btn tiny shot', title:'카메라로 촬영', onclick:(e)=>{ e.stopPropagation(); grab(true); } }, [
+          el('span', { class:'cam-ico', text:'📷' }),
+          el('span', { class:'cam-lbl', text:'촬영' }),
+        ]),
+        el('button', { class:'btn tiny ghost shot', title:'갤러리에서 선택', onclick:(e)=>{ e.stopPropagation(); grab(false); } }, [
+          el('span', { class:'cam-ico', text:'🖼' }),
+          el('span', { class:'cam-lbl', text:'선택' }),
+        ]),
       ]));
-      box.appendChild(el('button', {
-        class:'photo-pick', title:'갤러리에서 선택', text:'🖼',
-        onclick: (e) => { e.stopPropagation(); grab(false); }
-      }));
     }
   }
   async function grab(capture){

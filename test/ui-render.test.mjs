@@ -45,6 +45,9 @@ const segBtns = main.querySelectorAll('.seg-btn');
 ok(segBtns.length===2 && segBtns[0].textContent==='영화' && segBtns[1].textContent==='드라마', '세그먼트 = 영화/드라마');
 ok(main.querySelectorAll('.field').length>=30, `프로젝트 필드 ${main.querySelectorAll('.field').length}개`);
 ok(main.textContent.includes('VFX 슈퍼바이저') && main.textContent.includes('작업 컬러스페이스'), '보완 필드 추가됨');
+ok(main.textContent.includes('AI 슈퍼바이저') && main.textContent.includes('VFX 어시스트'), 'AI 슈퍼바이저 / VFX 어시스트 추가');
+ok(!main.textContent.includes('VFX 프로듀서'), 'VFX 프로듀서 제거됨');
+ok(!!main.querySelector('.photo-tile img'), '포스터가 이미 있으면 이미지로 표시');
 ev(segBtns[0]); await wait(700);
 ok((await DB.getProject()).type==='영화', '세그먼트 클릭 → 저장');
 
@@ -57,7 +60,9 @@ ev(rec1); await wait(400);
 ok(!!main.querySelector('.cuts-sec'), '씬 에디터에 CUTS 섹션');
 const cutCards = main.querySelectorAll('.cut-card');
 ok(cutCards.length===1, `기존 컷 카드 ${cutCards.length}개`);
-ok(!!main.querySelector('.photo-tile.tap'), '빈 썸네일이 탭-투-촬영 모드');
+const shotBtns = main.querySelectorAll('.photo-empty .btn.shot');
+ok(shotBtns.length>=2, `빈 썸네일에 버튼 ${shotBtns.length}개`);
+ok(shotBtns[0].textContent.includes('촬영') && shotBtns[1].textContent.includes('선택'), '촬영 / 선택 둘 다 제공');
 
 const addCutBtn = Array.from(main.querySelectorAll('.cuts-sec button')).find(b=>b.textContent==='+ 컷');
 ok(!!addCutBtn, '+ 컷 버튼');

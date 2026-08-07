@@ -157,7 +157,7 @@ export const DEFAULT_PROJECT = {
   crankIn:'', crankUp:'', productionCompany:'', distributor:'', deliveryDate:'',
   mainSchedule:'', director:'', cinematographer:'', productionDesigner:'',
   gaffer:'', producer:'', assistantDirector:'', bDirector:'',
-  vfxSupervisor:'', vfxProducer:'',
+  vfxSupervisor:'', aiSupervisor:'', vfxAssist:'',
   deliveryResolution:'', deliveryAspect:'', deliveryFps:'', deliveryColorSpace:'',
   workColorSpace:'', onsetLut:'',
   deliveryBitDepth:'', deliveryCodec:'', deliveryContainer:'', deliveryAudio:'',

@@ -292,18 +292,16 @@ body.printing #printroot{
 }
 .seg-btn.on{ background:var(--fg); color:var(--bg); }
 
-/* 사진 타일 — 탭하면 촬영 */
-.photo-tile.tap{ cursor:pointer; }
-.photo-tile.tap:hover{ border-color:var(--accent); background:var(--accent2); }
+/* 사진 타일 — 촬영 / 갤러리 선택 둘 다 */
 .photo-tile.big{ aspect-ratio:3/4; max-width:220px; }
-.photo-empty{ display:flex; flex-direction:column; align-items:center; gap:4px; pointer-events:none; }
-.cam-ico{ font-size:22px; }
-.cam-lbl{ font-size:11px; color:var(--dim); }
-.photo-pick, .photo-ocr{
-  position:absolute; bottom:4px; right:4px; width:28px; height:28px; border-radius:7px;
-  background:rgba(0,0,0,.5); color:#fff; border:none; cursor:pointer; font-size:13px; line-height:1;
+.photo-empty{ display:flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:wrap; justify-content:center; }
+.btn.shot{ display:inline-flex; align-items:center; gap:5px; }
+.cam-ico{ font-size:15px; }
+.cam-lbl{ font-size:12px; }
+.photo-ocr{
+  position:absolute; top:4px; right:36px; width:28px; height:28px; border-radius:7px;
+  background:var(--accent); color:#fff; border:none; cursor:pointer; font-size:15px; line-height:1;
 }
-.photo-ocr{ bottom:auto; top:4px; right:36px; background:var(--accent); font-size:15px; }
 
 /* 섹션 헤더 */
 .sec-head{ margin:22px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
@@ -343,9 +341,11 @@ body.printing #printroot{
 }
 .take-row.hdr span{ padding:0 2px; }
 .tk-mon .photo-tile{ aspect-ratio:16/9; width:70px; border-radius:6px; }
-.tk-mon .cam-ico{ font-size:14px; }
+.tk-mon .photo-empty{ gap:2px; }
+.tk-mon .btn.shot{ min-height:26px; padding:0 5px; }
+.tk-mon .cam-ico{ font-size:12px; }
 .tk-mon .cam-lbl{ display:none; }
-.tk-mon .photo-meta, .tk-mon .photo-pick{ display:none; }
+.tk-mon .photo-meta{ display:none; }
 .tk-mon .photo-x{ width:18px; height:18px; font-size:11px; top:2px; right:2px; }
 .inp.cell{ min-height:32px; font-size:12px; padding:3px 6px; width:100%; }
 select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14px; }
