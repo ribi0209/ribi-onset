@@ -1,0 +1,3 @@
+{ "type":"module",
+  "scripts": { "test":"node data-roundtrip.test.mjs && node ui-render.test.mjs && node db-migration.test.mjs" },
+  "devDependencies": { "fake-indexeddb":"^6.0.0", "jsdom":"^25.0.0" } }

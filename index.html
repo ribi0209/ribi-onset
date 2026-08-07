@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#0e1116">
+<meta name="mobile-web-app-capable" content="yes">
+<title>PMT Onset</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+
+<header id="top">
+  <div class="brand">
+    <span class="logo">◧</span>
+    <span id="projName">PMT Onset</span>
+  </div>
+  <div class="row gap">
+    <button class="btn ghost tiny" id="themeBtn" title="화면 모드 전환">◑</button>
+  </div>
+</header>
+
+<nav id="nav"></nav>
+
+<main id="main"></main>
+
+<script>
+  // 테마는 부트 전에 적용 (깜빡임 방지)
+  (function(){
+    var t = localStorage.getItem('pmt-theme') || 'dark';
+    document.documentElement.dataset.theme = t;
+    document.addEventListener('click', function(e){
+      if (!e.target.closest('#themeBtn')) return;
+      var n = document.documentElement.dataset.theme === 'dark' ? 'day' : 'dark';
+      document.documentElement.dataset.theme = n;
+      localStorage.setItem('pmt-theme', n);
+    });
+  })();
+</script>
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

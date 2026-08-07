@@ -1,0 +1,5 @@
+.DS_Store
+node_modules/
+# 촬영 데이터 백업은 절대 공개 저장소에 올리지 않는다
+PMT_*.json
+*_백업_*.json
