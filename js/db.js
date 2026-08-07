@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — db.js
+ * Ribi Onset — db.js
  * IndexedDB 데이터 레이어.
  *
  * 설계 핵심
@@ -12,10 +12,18 @@
 
 import { DEFAULT_REFS, ENTITIES } from './schema.js';
 
-export const DB_NAME = 'pmt-onset';
+export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
 export const DB_VER  = 2;
-export const APP_ID  = 'PMT Onset Offline';
+export const APP_ID  = 'Ribi Onset Management';
 export const APP_VER = 5;
+
+/** 파일명에 쓸 프로젝트 약칭 (프로젝트명이 비면 ONSET) */
+export function slugOf(name){
+  return (String(name || '')
+    .replace(/[^\p{L}\p{N}]+/gu, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 24)) || 'ONSET';
+}
 
 const RECORD_STORES = ['scenes','locations','cameras','assets','hdri'];
 
@@ -259,7 +267,7 @@ function rand4(){ return Math.random().toString(16).slice(2,6).toUpperCase(); }
 function pad(n){ return String(n).padStart(2,'0'); }
 
 export function makeSceneId(projectName){
-  const abbr = (projectName || 'PMT').replace(/[^A-Za-z0-9가-힣]/g,'').slice(0,3).toUpperCase() || 'PMT';
+  const abbr = String(projectName || '').replace(/[^A-Za-z0-9가-힣]/g,'').slice(0,3).toUpperCase() || 'SCN';
   const d = new Date();
   return `${abbr}-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-` +
          `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${rand4()}`;

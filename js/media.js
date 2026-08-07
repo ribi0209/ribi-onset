@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — media.js
+ * Ribi Onset — media.js
  * 촬영/선택한 이미지를 현장용으로 압축해 media 스토어에 넣는다.
  * EXIF 회전은 createImageBitmap(imageOrientation:'from-image') 으로 처리 (Chrome/Android).
  * ===================================================================== */

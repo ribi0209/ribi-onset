@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — export.js
+ * Ribi Onset — export.js
  * CSV / VFX 브레이크다운 시트 / PDF(브라우저 인쇄)
  * 태블릿에서 팝업이 막히므로 새 창을 열지 않고 현재 문서에 인쇄 전용 DOM 을 만든다.
  * Chrome 인쇄 대화상자 → "PDF로 저장" 으로 PDF 생성.
@@ -23,7 +23,8 @@ export async function exportCSV(entKey, rows){
   const lines = [head.map(csvCell).join(',')];
   for (const r of rows) lines.push(cols.map(c => csvCell(r[c])).join(','));
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
-  download(blob, `PMT_${cfg.label}_${nowDate()}.csv`);
+  const p = await DB.getProject();
+  download(blob, `${DB.slugOf(p.name)}_${cfg.label}_${nowDate()}.csv`);
   toast(`CSV ${rows.length}행 내보냄`);
 }
 

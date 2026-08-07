@@ -1,6 +1,6 @@
 {
-  "name": "PMT Onset — 현장 매니지먼트",
-  "short_name": "PMT Onset",
+  "name": "Ribi Onset Management",
+  "short_name": "Ribi Onset",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

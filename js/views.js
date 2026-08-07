@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — views.js
+ * Ribi Onset — views.js
  * 엔티티 리스트 + 에디터, 프로젝트, 레퍼런스, 백업, 대시보드
  * ===================================================================== */
 
@@ -268,7 +268,11 @@ export async function projectView(root){
   let t = null;
   const form = await renderForm(p, PROJECT_SCHEMA.groups, 'project', () => {
     clearTimeout(t);
-    t = setTimeout(async () => { await DB.setProject(p); toast('프로젝트 저장됨', 'ok', 1200); }, 500);
+    t = setTimeout(async () => {
+      await DB.setProject(p);
+      const brand = $('#projName'); if (brand) brand.textContent = p.name || '';
+      toast('프로젝트 저장됨', 'ok', 1200);
+    }, 500);
   });
   root.appendChild(el('div', { class:'pane single' }, [
     el('h2', { text:'프로젝트' }),
@@ -359,7 +363,8 @@ export async function backupView(root, reload){
       const data = await DB.exportBackup(withMedia);
       p.set('직렬화 중', 70);
       const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
-      const name = `PMT_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.json`;
+      const proj = await DB.getProject();
+      const name = `${DB.slugOf(proj.name)}_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.json`;
       const a = el('a', { href: URL.createObjectURL(blob), download: name });
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -378,7 +383,7 @@ export async function backupView(root, reload){
       el('button', { class:'btn primary', text:'전체 백업 (이미지 포함)', onclick: () => doExport(true) }),
       el('button', { class:'btn', text:'경량 백업 (이미지 제외)', onclick: () => doExport(false) }),
     ]),
-    el('p', { class:'dim tiny', text:'전체 백업은 기존 PMT Onset 백업(v3)과 동일한 구조라 상호 호환됩니다.' }),
+    el('p', { class:'dim tiny', text:'전체 백업은 기존 온셋 백업(v3)과 동일한 구조라 상호 호환됩니다.' }),
 
     el('h3', { class:'sect', text:'가져오기' }),
     el('div', { class:'row gap wrap' }, [

@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — app.css
+ * Ribi Onset — app.css
  * 갤럭시탭(가로 ~1600×1000) 기준. 터치 타겟 최소 44px.
  * data-theme="dark" 기본 / "day" = 야외 고대비 모드
  * ===================================================================== */
@@ -31,8 +31,11 @@ body{
   display:flex; align-items:center; justify-content:space-between;
   padding:8px 14px; background:var(--bg2); border-bottom:1px solid var(--line);
 }
-.brand{ display:flex; align-items:center; gap:9px; font-weight:700; letter-spacing:.2px; }
-.logo{ color:var(--accent); font-size:20px; }
+.brand{ display:flex; align-items:baseline; gap:9px; min-width:0; }
+.logo{ color:var(--accent); font-size:20px; align-self:center; }
+.brandname{ font-weight:700; letter-spacing:.2px; white-space:nowrap; }
+.projname{ color:var(--dim); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.projname:not(:empty)::before{ content:'· '; }
 
 #nav{
   display:flex; gap:4px; padding:6px 10px; background:var(--bg2);

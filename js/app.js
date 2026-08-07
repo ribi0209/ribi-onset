@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — app.js  (부트 + 라우터)
+ * Ribi Onset — app.js  (부트 + 라우터)
  * ===================================================================== */
 
 import * as DB from './db.js';
@@ -39,7 +39,7 @@ async function boot(){
   setRefsCache(await DB.getRefs());
 
   const p = await DB.getProject();
-  $('#projName').textContent = p.name || 'PMT Onset';
+  $('#projName').textContent = p.name || '';
 
   const nav = $('#nav');
   clear(nav);
@@ -63,7 +63,7 @@ async function boot(){
   window.addEventListener('offline', () => toast('오프라인 — 로컬 저장은 정상 동작합니다', 'warn', 2500));
 
   // 디버그/자동 테스트용 훅
-  window.PMT = { DB, render, go };
+  window.RIBI = { DB, render, go };
   document.body.dataset.ready = '1';
 }
 

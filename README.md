@@ -1,4 +1,4 @@
-# PMT Onset — 촬영 현장 매니지먼트 툴
+# Ribi Onset Management — 촬영 현장 매니지먼트 툴
 
 로컬 우선(local-first) PWA. 서버 없음, 계정 없음, 오프라인 100% 동작.
 데이터는 기기 IndexedDB 에 저장되고 JSON 으로 내보내기/가져오기 한다.
@@ -7,13 +7,19 @@
 
 ## 1. 배포 (GitHub Pages)
 
-1. GitHub 에서 새 저장소 생성 — 이름 예: `pmt-onset` (Public)
-2. 이 폴더의 **내용물 전체**를 저장소 루트에 업로드
-   (웹 UI: `Add file → Upload files` 에 폴더째 드래그)
-3. `Settings → Pages → Build and deployment`
-   - Source: **Deploy from a branch**
-   - Branch: **main / (root)** → Save
-4. 1~2분 후 주소 생성: `https://<계정>.github.io/pmt-onset/`
+배포 주소: **https://ribi0209.github.io/ribi-onset/**
+
+로컬 작업 폴더: `~/Documents/_ribiOnsetTool` (GitHub 저장소 `ribi0209/ribi-onset` 와 연결됨)
+
+수정 후 반영:
+
+```bash
+cd ~/Documents/_ribiOnsetTool
+git add -A && git commit -m "변경 내용" && git push
+```
+
+1~2분 뒤 위 주소에 반영된다. 폴더는 어디로 옮겨도 되고, 지워졌다면
+`git clone https://github.com/ribi0209/ribi-onset.git` 로 되살리면 된다.
 
 ### 갤럭시탭 설치
 Chrome 으로 위 주소 접속 → 우상단 ⋮ → **홈 화면에 추가**
@@ -26,7 +32,7 @@ Chrome 으로 위 주소 접속 → 우상단 ⋮ → **홈 화면에 추가**
 
 ## 2. 기존 데이터 이전
 
-`백업` 탭 → **덮어쓰기 가져오기** → `PMT_온셋_전체백업_2026-08-06.json` 선택.
+`백업` 탭 → **덮어쓰기 가져오기** → 기존 온셋 백업 JSON 선택.
 
 기존 백업(v3)의 project / references / locations / cameras / assets / **cuts** 를
 필드·이미지 바이트까지 손실 없이 읽는다. (테스트로 검증됨)
@@ -85,7 +91,7 @@ test/                   자동 검증 스크립트
 
 - 기록 단위는 **씬**이다. 한 레코드 = 한 씬.
 - `+ 새 씬` → 직전 씬의 EP/씬번호/유닛/INT-EXT/시간대/로케이션/벤더/상태를 상속하고
-  촬영일·시각을 자동 기록, ID 는 `PMT-YYYYMMDD-HHMMSS-XXXX` 규칙으로 생성
+  촬영일·시각을 자동 기록, ID 는 `<프로젝트약어>-YYYYMMDD-HHMMSS-XXXX` 규칙으로 생성
 - `📷 촬영 + 등록` → 카메라 바로 열림, 촬영 즉시 압축 후 새 씬 생성
 - 모든 입력은 **0.5초 자동 저장** (저장 버튼 없음, ID 옆 점이 초록으로 깜빡임)
 - 콤보 박스에 목록에 없는 값을 입력하면 레퍼런스에 자동 편입
@@ -109,7 +115,7 @@ test/                   자동 검증 스크립트
 ```bash
 cd test
 npm install
-PMT_BACKUP=/경로/PMT_온셋_전체백업_2026-08-06.json npm test
+PMT_BACKUP=/경로/온셋백업.json npm test
 ```
 
 - `data-roundtrip.test.mjs` — 실제 백업 import → 레코드/필드/이미지 바이트 무손실,
@@ -126,5 +132,16 @@ PMT_BACKUP=/경로/PMT_온셋_전체백업_2026-08-06.json npm test
 - 데이터는 **이 기기에만** 있다. 여러 명이 동시에 기록하려면 각자 기록 후
   경량/전체 백업 JSON 을 병합 가져오기 해야 한다 (동일 ID 는 덮어씀).
 - iOS Safari 는 IndexedDB 용량 정책이 달라 대용량에서 불리하다. 갤럭시탭 Chrome 권장.
-- 코드를 수정한 뒤에는 `sw.js` 의 `CACHE = 'pmt-onset-v2'` 숫자를 올려야
+- 코드를 수정한 뒤에는 `sw.js` 의 `CACHE = 'ribi-onset-v1'` 숫자를 올려야
   태블릿이 캐시된 구버전 대신 새 버전을 받는다.
+
+---
+
+## 8. 이름 규칙
+
+- 툴 이름: **Ribi Onset Management** (프로젝트와 무관한 고정 이름)
+- 화면 상단에는 `Ribi Onset · <프로젝트명>` 이 표시된다
+- 내보내는 CSV / 백업 파일명은 **프로젝트명 기준**으로 자동 생성된다
+  (예: 프로젝트명이 `PMT (프로모터)` 면 `PMT_프로모터_씬_2026-08-07.csv`)
+- 씬 ID 접두사도 프로젝트명 앞 3글자를 딴다. 프로젝트명이 비어 있으면 `SCN`
+- 내부 IndexedDB 키(`pmt-onset`)만 그대로 둔다 — 바꾸면 이미 기록한 데이터가 유실되기 때문

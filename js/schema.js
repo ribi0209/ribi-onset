@@ -1,5 +1,5 @@
 /* =====================================================================
- * PMT Onset — schema.js
+ * Ribi Onset — schema.js
  * 모든 엔티티/필드/레퍼런스를 여기서만 선언한다.
  * 필드를 추가·삭제·순서변경 하려면 이 파일만 고치면 UI/CSV/PDF가 따라온다.
  *
@@ -143,7 +143,7 @@ export const ENTITIES = {
   /* ============ 씬 (기록 단위) ============ */
   scenes: {
     label: '씬', icon: '◧', store: 'scenes',
-    idPrefix: null,                 // 프로젝트 약어 기반 (PMT-YYYYMMDD-HHMMSS-XXXX)
+    idPrefix: null,                 // 프로젝트명 약어 기반 (예: PMT-20260807-181959-4E54)
     titleFields: ['episode','scene'],
     subtitleFields: ['location','subLocation'],
     thumbField: 'thumbnail',
