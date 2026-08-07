@@ -2,7 +2,7 @@
  * 앱 셸만 캐시한다. 데이터는 IndexedDB 이므로 SW 와 무관하게 오프라인 동작.
  * 코드를 수정한 뒤에는 아래 CACHE 버전을 올려야 태블릿이 새 버전을 받는다.
  */
-const CACHE = 'pmt-onset-v2';
+const CACHE = 'pmt-onset-v3';
 const SHELL = [
   './',
   './index.html',
@@ -16,6 +16,8 @@ const SHELL = [
   './js/export.js',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
 ];
 
 self.addEventListener('install', (e) => {
