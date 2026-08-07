@@ -13,7 +13,13 @@
  * (앱 첫 로딩을 무겁게 하지 않기 위해 서비스워커 프리캐시에서 제외)
  * ===================================================================== */
 
-const VENDOR = './vendor/tesseract/';
+/**
+ * 반드시 절대 URL 로 만든다.
+ *  - 동적 import() 는 "이 모듈 파일(js/ocr.js)" 기준으로 상대경로를 푼다  → js/vendor/... (틀림)
+ *  - tesseract 의 workerPath/corePath/langPath 는 "페이지 URL" 기준으로 푼다 → vendor/... (맞음)
+ * 기준이 서로 달라서 상대경로를 쓰면 한쪽이 반드시 404 난다.
+ */
+const VENDOR = new URL('../vendor/tesseract/', import.meta.url).href;
 
 let _worker = null;
 let _loading = null;
@@ -33,6 +39,13 @@ export function loadEngine(onProgress = () => {}){
 
   _loading = (async () => {
     onProgress('OCR 엔진 불러오는 중', 5);
+
+    // 파일이 실제로 있는지 먼저 확인해 원인을 분명히 남긴다
+    const probe = await fetch(VENDOR + 'tesseract.esm.min.js', { method:'GET' }).catch(() => null);
+    if (!probe || !probe.ok){
+      throw new Error(`엔진 파일을 찾을 수 없습니다 (${probe ? probe.status : '네트워크 오류'})\n${VENDOR}`);
+    }
+
     const mod = await import(VENDOR + 'tesseract.esm.min.js');
     const createWorker = mod.createWorker || (mod.default && mod.default.createWorker);
     if (!createWorker) throw new Error('tesseract 모듈을 찾을 수 없습니다');
