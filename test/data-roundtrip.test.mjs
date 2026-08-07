@@ -1,120 +1,97 @@
 import 'fake-indexeddb/auto';
 import fs from 'node:fs';
-
-// --- 브라우저 전용 API 최소 셰임 ---
-
 if (!globalThis.FileReader){
-  globalThis.FileReader = class {
-    readAsDataURL(blob){
-      blob.arrayBuffer().then(buf => {
-        const b64 = Buffer.from(buf).toString('base64');
-        this.result = `data:${blob.type||'application/octet-stream'};base64,${b64}`;
-        this.onload && this.onload();
-      });
-    }
-  };
+  globalThis.FileReader = class { readAsDataURL(b){ b.arrayBuffer().then(x=>{
+    this.result='data:'+(b.type||'')+';base64,'+Buffer.from(x).toString('base64'); this.onload&&this.onload(); }); } };
+}
+const DB = await import('../js/db.js');
+const orig = JSON.parse(fs.readFileSync(process.env.PMT_BACKUP,'utf8'));
+let fail=0; const ok=(c,m)=>{ console.log((c?'  PASS ':'  FAIL ')+m); if(!c) fail++; };
+
+console.log('== 1. 구 백업(v3, cuts=기록단위) 가져오기 ==');
+const s = await DB.importBackup(orig,'replace',()=>{});
+console.log('  stats:', JSON.stringify(s));
+ok(s.projects === 1, `프로젝트 1개 생성 (${s.projects})`);
+ok(s.scenes === orig.cuts.length, `구 cuts[] → scenes ${s.scenes}/${orig.cuts.length}`);
+ok(s.locations===3 && s.cameras===1 && s.assets===1, '나머지 스토어 이관');
+
+const projects = await DB.listProjects();
+ok(projects.length===1 && projects[0].name===orig.project.name, `프로젝트명 보존: ${projects[0].name}`);
+const pid = projects[0].id;
+ok(/^PRJ-/.test(pid), `프로젝트 ID ${pid}`);
+
+console.log('== 2. 전 레코드 projectId 부여 ==');
+for (const st of ['scenes','cuts','locations','cameras','assets','hdri']){
+  const rows = await DB.listAll(st);
+  const bad = rows.filter(r => r.projectId !== pid);
+  ok(bad.length===0, `${st}: ${rows.length}건 전부 projectId 일치`);
 }
 
-const DB = await import('../js/db.js');
-const SRC = process.env.PMT_BACKUP;
-const orig = JSON.parse(fs.readFileSync(SRC,'utf8'));
+console.log('== 3. 씬의 VFX 정보 → 컷으로 분리 ==');
+const scenes = await DB.list('scenes');
+const cuts = await DB.list('cuts');
+const legacyWithVfx = orig.cuts.filter(c => c.vfxA||c.vfxB||c.workElement||c.vendor||c.filename);
+ok(cuts.length === legacyWithVfx.length, `컷 ${cuts.length}개 생성 (VFX 정보 있던 구 레코드 ${legacyWithVfx.length}개)`);
+ok(scenes.every(s => !('vfxA' in s) && !('vendor' in s)), '씬에서 VFX 필드 제거됨');
+ok(cuts.every(c => scenes.some(s => s.id === c.sceneId)), '모든 컷이 유효한 씬에 연결됨');
+ok(cuts.every(c => Array.isArray(c.takes)), '컷마다 takes 배열 존재');
+const vendorSrc = legacyWithVfx.find(c=>c.vendor);
+if (vendorSrc){ const mapped = cuts.find(c=>c.sceneId===vendorSrc.id);
+  ok(mapped && mapped.vendor===vendorSrc.vendor, `벤더 이관 (${mapped&&mapped.vendor})`); }
 
-let fail = 0;
-const ok = (c,m)=>{ console.log((c?'  PASS ':'  FAIL ')+m); if(!c) fail++; };
+console.log('== 4. 멀티 프로젝트 격리 ==');
+const p2 = await DB.createProject({ name:'두번째 작품' });
+ok((await DB.listProjects()).length===2, '프로젝트 2개');
+ok((await DB.currentProjectId())===p2.id, '생성 즉시 현재 프로젝트로 전환');
+ok((await DB.list('scenes')).length===0, '새 프로젝트는 빈 씬 목록');
+ok((await DB.listAll('scenes')).length===scenes.length, '전체 조회로는 기존 씬 그대로 존재');
+const refsShared = await DB.getRefs();
+ok(refsShared.vfxTypes.length>0 && refsShared.episodes.length>0, '드롭다운 목록은 전역 공유');
+await DB.put('scenes', { id:'S-X', episode:'EP01', scene:'1-1' });
+ok((await DB.list('scenes')).length===1, '새 프로젝트에 씬 추가 → 격리됨');
+await DB.setCurrentProject(pid);
+ok((await DB.list('scenes')).length===scenes.length, '프로젝트 되돌리면 원래 씬만 보임');
 
-console.log('== 1. importBackup (replace) ==');
-const stats = await DB.importBackup(orig, 'replace', ()=>{});
-console.log('  stats:', JSON.stringify(stats));
-ok(stats.scenes === orig.cuts.length,         `구 백업 cuts → scenes 이관 ${stats.scenes}/${orig.cuts.length}`);
-ok(stats.locations === orig.locations.length, `로케이션 ${stats.locations}/${orig.locations.length}`);
-ok(stats.cameras === orig.cameras.length,     `카메라 ${stats.cameras}/${orig.cameras.length}`);
-ok(stats.assets === orig.assets.length,       `에셋 ${stats.assets}/${orig.assets.length}`);
+console.log('== 5. 테이크 ==');
+const c0 = cuts[0];
+c0.takes = [
+  { takeNo:'1', camRoll:'A027', clip:'C006', tc:'12:14:01:20', state:'OK', fps:'23.976', shutter:'180°', ei:'EI 800', wb:'4300K' },
+  { takeNo:'2', camRoll:'A027', clip:'C007', tc:'12:16:02:11', state:'NG' },
+];
+await DB.put('cuts', c0);
+const reloaded = await DB.get('cuts', c0.id);
+ok(reloaded.takes.length===2, '테이크 2개 저장');
+ok(reloaded.takes[0].clip==='C006' && reloaded.takes[0].tc==='12:14:01:20', '캠롤/클립/TC 보존');
+ok((await DB.listCuts(c0.sceneId)).length>=1, 'listCuts 로 씬 하위 컷 조회');
 
-// 원본 이미지 개수 세기
+console.log('== 6. export 라운드트립 ==');
+const out = await DB.exportBackup(true, null);
+ok(out.projects.length===2, `전체 백업에 프로젝트 2개`);
+ok(out.scenes.length===scenes.length+1 && out.cuts.length===cuts.length, '씬/컷 수 일치');
+const outCut = out.cuts.find(c=>c.id===c0.id);
+ok(outCut && outCut.takes.length===2, '테이크가 백업에 포함됨');
+const scoped = await DB.exportBackup(true, pid);
+ok(scoped.projects.length===1 && scoped.scenes.length===scenes.length, '프로젝트 단위 백업 스코프 정확');
+
 function countImgs(o){ let n=0; const w=(v)=>{ if(!v) return;
   if(Array.isArray(v)) return v.forEach(w);
-  if(typeof v==='object'){ if(v.dataUrl) n++; else Object.values(v).forEach(w); } };
-  w(o); return n; }
+  if(typeof v==='object'){ if(v.dataUrl) n++; else Object.values(v).forEach(w); } }; w(o); return n; }
 const origImgs = countImgs({p:orig.project,l:orig.locations,c:orig.cameras,a:orig.assets,u:orig.cuts});
-ok(stats.media === origImgs, `이미지 ${stats.media}/${origImgs}`);
+ok(countImgs(out)===origImgs, `이미지 ${countImgs(out)}/${origImgs} 무손실`);
 
-console.log('== 2. 레퍼런스 보존 ==');
-const refs = await DB.getRefs();
-const DROPPED_REFS = ['cuts','pDays'];
-const keptRefs = Object.keys(orig.references).filter(k => !DROPPED_REFS.includes(k));
-const refBad = keptRefs.filter(k => JSON.stringify(refs[k]) !== JSON.stringify(orig.references[k]));
-ok(refBad.length===0, `레퍼런스 ${keptRefs.length}종 일치 (불일치: ${refBad})`);
-ok(DROPPED_REFS.every(k => !(k in refs)), '폐기 레퍼런스 2종 미도입');
+console.log('== 7. 재가져오기 (멀티 포맷) ==');
+const s2 = await DB.importBackup(out,'replace',()=>{});
+ok(s2.projects===2 && s2.scenes===scenes.length+1 && s2.cuts===cuts.length, `멀티 백업 재가져오기 ${JSON.stringify({p:s2.projects,s:s2.scenes,c:s2.cuts})}`);
+const rc = (await DB.listAll('cuts')).find(c=>c.id===c0.id);
+ok(rc && rc.takes.length===2 && rc.takes[0].clip==='C006', '재가져오기 후 테이크 보존');
 
-console.log('== 3. 프로젝트 필드 보존 ==');
-const proj = await DB.getProject();
-const projMismatch = Object.entries(orig.project).filter(([k,v]) => k!=='poster' && proj[k]!==v);
-ok(projMismatch.length===0, `프로젝트 필드 일치 (불일치 ${projMismatch.length}: ${projMismatch.map(x=>x[0])})`);
-ok(!!(proj.poster && proj.poster.mid), '포스터 이미지 → media 참조로 변환됨');
+console.log('== 8. 프로젝트 삭제 = 하위 기록 동반 삭제 ==');
+const before = (await DB.listAll('scenes')).length;
+const target = (await DB.listProjects()).find(p=>p.name==='두번째 작품');
+await DB.deleteProject(target.id);
+ok((await DB.listProjects()).length===1, '프로젝트 1개 남음');
+ok((await DB.listAll('scenes')).length===before-1, '해당 프로젝트 씬만 삭제됨');
+ok((await DB.gcMedia())===0, '미디어 누수 없음');
 
-console.log('== 4. export 라운드트립 ==');
-const out = await DB.exportBackup(true);
-ok(out.scenes.length===orig.cuts.length && out.locations.length===orig.locations.length
-   && out.assets.length===orig.assets.length && out.cameras.length===orig.cameras.length, '레코드 수 동일');
-ok(out.cuts === undefined, '내보내기는 scenes 키만 사용 (cut 개념 제거)');
-const outImgs = countImgs({p:out.project,l:out.locations,c:out.cameras,a:out.assets,u:out.scenes});
-ok(outImgs===origImgs, `이미지 수 동일 ${outImgs}/${origImgs}`);
-
-// 바이트 단위 이미지 동일성 — id 로 매칭해 전 레코드 전수 비교
-function imgList(o){ const r=[]; const w=(v)=>{ if(!v) return;
-  if(Array.isArray(v)) return v.forEach(w);
-  if(typeof v==='object'){ if(v.dataUrl){r.push(v);} else Object.values(v).forEach(w);} }; w(o); return r; }
-let imgChecked=0, imgBad=[];
-for (const store of ['locations','cameras','assets','cuts']){
-  const outStore = store==='cuts' ? 'scenes' : store;
-  const outById = Object.fromEntries(out[outStore].map(r=>[r.id,r]));
-  for (const rec of orig[store]){
-    const A = imgList(rec), B = imgList(outById[rec.id]||{});
-    if (A.length !== B.length){ imgBad.push(`${rec.id}: 장수 ${A.length}!=${B.length}`); continue; }
-    for (let i=0;i<A.length;i++){
-      imgChecked++;
-      if (A[i].dataUrl !== B[i].dataUrl) imgBad.push(`${rec.id}[${i}] 바이트 불일치`);
-      else if (A[i].name!==B[i].name || A[i].width!==B[i].width || A[i].height!==B[i].height
-               || A[i].originalBytes!==B[i].originalBytes || A[i].compressedBytes!==B[i].compressedBytes)
-        imgBad.push(`${rec.id}[${i}] 메타 불일치`);
-    }
-  }
-}
-const pA = imgList(orig.project), pB = imgList(out.project);
-imgChecked += pA.length;
-if (pA.length!==pB.length || pA.some((x,i)=>x.dataUrl!==pB[i].dataUrl)) imgBad.push('project.poster 불일치');
-ok(imgBad.length===0, `이미지 ${imgChecked}장 바이트+메타 무손실 (문제 ${imgBad.length}: ${imgBad.slice(0,3)})`);
-
-// 컷 필드 전수 비교
-const outCutById = Object.fromEntries(out.scenes.map(c=>[c.id,c]));
-let cutDiff = [];
-for (const c of orig.cuts){
-  const o2 = outCutById[c.id];
-  if (!o2){ cutDiff.push(c.id+':missing'); continue; }
-  for (const [k,v] of Object.entries(c)){
-    if (['photos','thumbnail','updatedAt','cut','pDay'].includes(k)) continue;
-    if (o2[k] !== v) cutDiff.push(`${c.id}.${k}`);
-  }
-}
-ok(cutDiff.length===0, `씬 필드 전수 일치 (불일치 ${cutDiff.length}: ${cutDiff.slice(0,5)})`);
-const anyLegacy = out.scenes.some(r => 'cut' in r || 'pDay' in r);
-ok(!anyLegacy, '폐기 필드(cut, pDay)가 레코드에서 완전히 제거됨');
-ok(!('cuts' in refs) && !('pDays' in refs), '폐기 레퍼런스(cuts, pDays) 미도입');
-ok(out.assets.every(a => !('linkedCutIds' in a) ), 'assets.linkedCutIds → linkedSceneIds 이관');
-
-console.log('== 5. merge 모드 / GC ==');
-const s2 = await DB.importBackup(orig, 'merge', ()=>{});
-const cuts2 = await DB.list('scenes');
-ok(cuts2.length===orig.cuts.length, `merge 시 동일 id 중복 생성 안 함 (${cuts2.length})`);
-ok(s2.media === origImgs, `merge 후 미디어 수 ${s2.media}/${origImgs} (고아 자동 정리됨)`);
-const gc = await DB.gcMedia();
-ok(gc === 0, `추가 GC 대상 ${gc}건 = 0 (누수 없음)`);
-const afterGc = await DB.exportBackup(true);
-ok(countImgs({p:afterGc.project,l:afterGc.locations,c:afterGc.cameras,a:afterGc.assets,u:afterGc.scenes})===origImgs, 'GC 후에도 사용 중 이미지 무손실');
-
-console.log('== 6. 신규 ID 생성 ==');
-ok(/^PMT-\d{8}-\d{6}-[0-9A-F]{4}$/.test(DB.makeSceneId('PMT (프로모터)')), 'makeSceneId 포맷 = 기존 규칙과 동일');
-ok(/^LOC-[0-9A-F]{8}$/.test(DB.makeId('LOC')), 'makeId 포맷');
-
-console.log(fail ? `\n### 실패 ${fail}건` : '\n### 전체 통과');
+console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

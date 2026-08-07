@@ -1,23 +1,15 @@
 /* =====================================================================
- * Ribi Onset — app.js  (부트 + 라우터)
+ * Ribi Onset — app.js  (부트 + 라우터 + 프로젝트 셀렉터)
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ENTITIES, ENTITY_ORDER } from './schema.js';
+import { NAV, ENTITY_ROUTES } from './schema.js';
 import { el, $, clear, toast, setRefsCache } from './ui.js';
-import { entityView, projectView, refsView, backupView, dashView } from './views.js';
-
-const ROUTES = [
-  { k:'dash',      label:'대시보드', icon:'▤' },
-  ...ENTITY_ORDER.map(k => ({ k, label: ENTITIES[k].label, icon: ENTITIES[k].icon })),
-  { k:'project',   label:'프로젝트', icon:'◫' },
-  { k:'refs',      label:'레퍼런스', icon:'≡' },
-  { k:'backup',    label:'백업',     icon:'⤓' },
-];
+import { entityView, projectView, overviewView, settingsView, backupView } from './views.js';
 
 function currentRoute(){
-  const h = (location.hash || '#/dash').replace(/^#\//,'');
-  return ROUTES.some(r => r.k === h) ? h : 'dash';
+  const h = (location.hash || '#/overview').replace(/^#\//,'');
+  return NAV.some(r => r.k === h) ? h : 'overview';
 }
 function go(k){ location.hash = '#/' + k; }
 
@@ -27,46 +19,76 @@ async function render(){
   const main = $('#main');
   main.dataset.route = k;
 
-  if (k === 'dash')          return dashView(main, go);
-  if (k === 'project')       return projectView(main);
-  if (k === 'refs')          return refsView(main);
-  if (k === 'backup')        return backupView(main, () => render());
-  return entityView(main, k);
+  if (k === 'project')  return projectView(main, () => boot(true));
+  if (k === 'overview') return overviewView(main, go);
+  if (k === 'settings') return settingsView(main);
+  if (k === 'backup')   return backupView(main, () => boot(true));
+  if (ENTITY_ROUTES.includes(k)) return entityView(main, k);
+  return overviewView(main, go);
 }
 
-async function boot(){
+/* ---------------- 프로젝트 셀렉터 ---------------- */
+
+async function buildProjectSelector(){
+  const host = $('#projPick');
+  clear(host);
+  const all = await DB.listProjects();
+  const cur = await DB.currentProjectId();
+
+  const sel = el('select', { id:'projSel', class:'inp mini proj-sel', title:'프로젝트 전환' });
+  for (const p of all){
+    sel.appendChild(el('option', { value:p.id, text:p.name || '(이름 없음)' }));
+  }
+  sel.value = cur;
+  sel.addEventListener('change', async () => {
+    await DB.setCurrentProject(sel.value);
+    toast(`프로젝트 전환: ${sel.options[sel.selectedIndex].textContent}`, 'ok', 1400);
+    await render();
+  });
+
+  host.append(
+    sel,
+    el('button', {
+      class:'btn tiny', title:'새 프로젝트', text:'+',
+      onclick: async () => {
+        const p = await DB.createProject({ name:'새 프로젝트' });
+        await buildProjectSelector();
+        go('project');
+        await render();
+        toast('새 프로젝트 생성 — 이름을 입력하세요');
+      }
+    })
+  );
+}
+
+/* ---------------- 부트 ---------------- */
+
+async function boot(again = false){
   await DB.open();
+  await DB.currentProjectId();          // 없으면 기본 프로젝트 생성
   setRefsCache(await DB.getRefs());
+  await buildProjectSelector();
 
-  const p = await DB.getProject();
-  $('#projName').textContent = p.name || '';
+  if (!again){
+    const nav = $('#nav');
+    clear(nav);
+    for (const r of NAV){
+      nav.appendChild(el('button', {
+        class:'nav-btn', dataset:{ k:r.k }, onclick: () => go(r.k)
+      }, [ el('i', { text:r.icon }), el('span', { text:r.label }) ]));
+    }
+    window.addEventListener('hashchange', render);
 
-  const nav = $('#nav');
-  clear(nav);
-  for (const r of ROUTES){
-    nav.appendChild(el('button', {
-      class:'nav-btn', dataset:{ k:r.k }, onclick: () => go(r.k)
-    }, [ el('i', { text:r.icon }), el('span', { text:r.label }) ]));
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    DB.requestPersist().then(ok => { if (!ok) console.warn('persistent storage not granted'); });
+    window.addEventListener('offline', () => toast('오프라인 — 로컬 저장은 정상 동작합니다', 'warn', 2500));
+    window.RIBI = { DB, render, go };
   }
 
-  window.addEventListener('hashchange', render);
   await render();
-
-  // 오프라인 캐시
-  if ('serviceWorker' in navigator){
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  }
-  // 현장 데이터 보호
-  DB.requestPersist().then(ok => { if (!ok) console.warn('persistent storage not granted'); });
-
-  window.addEventListener('online',  () => toast('온라인', 'ok', 1200));
-  window.addEventListener('offline', () => toast('오프라인 — 로컬 저장은 정상 동작합니다', 'warn', 2500));
-
-  // 디버그/자동 테스트용 훅
-  window.RIBI = { DB, render, go };
   document.body.dataset.ready = '1';
 }
 
 boot().catch(e => {
-  document.body.innerHTML = '<pre style="padding:24px;color:#f66">부팅 실패\n' + e.stack + '</pre>';
+  document.body.innerHTML = '<pre style="padding:24px;color:#f66;white-space:pre-wrap">부팅 실패\n' + e.stack + '</pre>';
 });

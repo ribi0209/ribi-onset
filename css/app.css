@@ -272,3 +272,88 @@ body.printing #printroot{
   .printbar{ display:none !important; }
   @page{ size:A4; margin:10mm; }
 }
+
+/* =====================================================================
+ * v3 추가 — 프로젝트 셀렉터 / 세그먼트 / 컷·테이크 / Overview
+ * ===================================================================== */
+
+#top{ gap:12px; }
+.proj-sel{
+  min-height:36px; font-weight:700; max-width:240px;
+  border-color:var(--accent); color:var(--accent); background:var(--bg);
+}
+#projPick{ flex:1; min-width:0; justify-content:center; }
+
+/* 세그먼트 토글 */
+.seg{ display:inline-flex; background:var(--bg3); border:1px solid var(--line); border-radius:9px; padding:3px; gap:3px; }
+.seg-btn{
+  min-height:34px; padding:0 18px; border:none; border-radius:7px; cursor:pointer;
+  background:transparent; color:var(--dim); font:inherit; font-weight:700;
+}
+.seg-btn.on{ background:var(--fg); color:var(--bg); }
+
+/* 사진 타일 — 탭하면 촬영 */
+.photo-tile.tap{ cursor:pointer; }
+.photo-tile.tap:hover{ border-color:var(--accent); background:var(--accent2); }
+.photo-tile.big{ aspect-ratio:3/4; max-width:220px; }
+.photo-empty{ display:flex; flex-direction:column; align-items:center; gap:4px; pointer-events:none; }
+.cam-ico{ font-size:22px; }
+.cam-lbl{ font-size:11px; color:var(--dim); }
+.photo-pick, .photo-ocr{
+  position:absolute; bottom:4px; right:4px; width:28px; height:28px; border-radius:7px;
+  background:rgba(0,0,0,.5); color:#fff; border:none; cursor:pointer; font-size:13px; line-height:1;
+}
+.photo-ocr{ bottom:auto; top:4px; right:36px; background:var(--accent); font-size:15px; }
+
+/* 섹션 헤더 */
+.sec-head{ margin:22px 0 10px; padding-top:14px; border-top:1px solid var(--line); }
+.sec-head h2, .sec-head h4{ margin:0; }
+.grow{ flex:1; }
+
+/* ---------- 컷 카드 ---------- */
+.cuts-sec{ margin-top:4px; }
+.cut-list{ display:flex; flex-direction:column; gap:8px; }
+.cut-card{ border:1px solid var(--line); border-radius:11px; background:var(--bg2); overflow:hidden; }
+.cut-head{
+  display:flex; align-items:center; gap:8px; padding:9px 12px; cursor:pointer; flex-wrap:wrap;
+}
+.cut-head:hover{ background:var(--bg3); }
+.cut-no{ font-weight:800; color:var(--accent); min-width:42px; }
+.tag.t-vfxType{ color:var(--warn); border-color:var(--warn); font-weight:700; }
+.tag.t-cut{ color:var(--ok); border-color:var(--ok); }
+.chev{ color:var(--dim); transition:transform .15s; }
+.cut-card.open .chev{ transform:rotate(180deg); }
+.cut-body{ display:none; padding:4px 12px 14px; border-top:1px solid var(--line); }
+.cut-card.open .cut-body{ display:block; }
+.cut-grid{ grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); }
+
+/* ---------- 테이크 표 ---------- */
+.takes{ margin:12px 0; }
+.takes-head{ display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.takes-head h5{ margin:0; font-size:11px; letter-spacing:.9px; color:var(--dim); text-transform:uppercase; }
+.take-table{ overflow-x:auto; border:1px solid var(--line); border-radius:9px; }
+.take-row{
+  display:grid; align-items:center; gap:5px; padding:5px 7px; min-width:1180px;
+  grid-template-columns:74px 60px 80px 80px 110px 80px 80px 85px 80px 85px 80px 85px 85px 1fr 34px;
+}
+.take-row + .take-row{ border-top:1px solid var(--line); }
+.take-row.hdr{
+  font-size:10px; letter-spacing:.5px; text-transform:uppercase; color:var(--dim);
+  background:var(--bg3); font-weight:700; position:sticky; top:0;
+}
+.take-row.hdr span{ padding:0 2px; }
+.tk-mon .photo-tile{ aspect-ratio:16/9; width:70px; border-radius:6px; }
+.tk-mon .cam-ico{ font-size:14px; }
+.tk-mon .cam-lbl{ display:none; }
+.tk-mon .photo-meta, .tk-mon .photo-pick{ display:none; }
+.tk-mon .photo-x{ width:18px; height:18px; font-size:11px; top:2px; right:2px; }
+.inp.cell{ min-height:32px; font-size:12px; padding:3px 6px; width:100%; }
+select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14px; }
+
+/* ---------- Overview ---------- */
+.card.wide{ grid-column:span 2; }
+@media (max-width:760px){ .card.wide{ grid-column:span 1; } }
+.progress-wrap{ display:flex; align-items:center; gap:9px; margin-top:8px; }
+.progress{ flex:1; max-width:340px; height:9px; background:var(--bg3); border-radius:5px; overflow:hidden; }
+.progress i{ display:block; height:100%; background:var(--ok); }
+.proj-head .grow{ min-width:0; }

@@ -94,8 +94,12 @@ export function refList(key){ return REFS[key] || []; }
 
 /* ---------------- 사진 위젯 ---------------- */
 
-function photoTile(getVal, setVal, preset, onDirty){
-  const box = el('div', { class:'photo-tile' });
+/**
+ * 사진 타일. 빈 타일을 "탭하면 바로 카메라"가 열린다 (현장 속도 우선).
+ * 갤러리에서 고르려면 우측 하단의 작은 🖼 버튼.
+ */
+export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
+  const box = el('div', { class:'photo-tile' + (opts.big ? ' big' : '') });
 
   async function render(){
     clear(box);
@@ -110,11 +114,24 @@ function photoTile(getVal, setVal, preset, onDirty){
         class:'photo-x', title:'삭제', text:'×',
         onclick: async (e) => { e.stopPropagation(); await DB.delMedia(v.mid); setVal(null); onDirty && onDirty(); render(); }
       }));
+      if (opts.onShot){
+        box.appendChild(el('button', {
+          class:'photo-ocr', title:'모니터 정보 읽기', text:'⌁',
+          onclick: (e) => { e.stopPropagation(); opts.onShot(v); }
+        }));
+      }
     } else {
+      // 타일 전체가 촬영 버튼
+      box.classList.add('tap');
+      box.addEventListener('click', () => grab(true));
       box.appendChild(el('div', { class:'photo-empty' }, [
-        el('button', { class:'btn tiny', text:'📷 촬영', onclick: () => grab(true) }),
-        el('button', { class:'btn tiny ghost', text:'🖼 선택', onclick: () => grab(false) }),
+        el('span', { class:'cam-ico', text:'📷' }),
+        el('span', { class:'cam-lbl', text: opts.label || '탭하면 촬영' }),
       ]));
+      box.appendChild(el('button', {
+        class:'photo-pick', title:'갤러리에서 선택', text:'🖼',
+        onclick: (e) => { e.stopPropagation(); grab(false); }
+      }));
     }
   }
   async function grab(capture){
@@ -125,11 +142,34 @@ function photoTile(getVal, setVal, preset, onDirty){
       const ref = await ingest(files[0], preset);
       setVal(ref); onDirty && onDirty();
       await render();
+      if (opts.onShot) opts.onShot(ref);
     } catch (e){ toast('이미지 처리 실패: ' + e.message, 'err'); }
     finally { p.done(); }
   }
   render();
   return box;
+}
+
+/**
+ * 표 안에 넣는 작은 입력. TAKE_FIELDS 같은 인라인 편집용.
+ * @param {object} f  { k, t, ref }
+ */
+export function miniField(f, rec, onDirty){
+  if (f.t === 'select'){
+    const sel = el('select', { class:'inp mini cell' });
+    sel.appendChild(el('option', { value:'', text:'—' }));
+    for (const o of refList(f.ref)) sel.appendChild(el('option', { value:o, text:o }));
+    if (rec[f.k] && !refList(f.ref).includes(rec[f.k])) sel.appendChild(el('option',{value:rec[f.k],text:rec[f.k]}));
+    sel.value = rec[f.k] || '';
+    sel.addEventListener('change', () => { rec[f.k] = sel.value; onDirty && onDirty(); });
+    return sel;
+  }
+  const inp = el('input', {
+    class:'inp mini cell', value: rec[f.k] || '', autocomplete:'off',
+    list: f.t === 'combo' ? 'dl-'+f.ref : null,
+  });
+  inp.addEventListener('input', () => { rec[f.k] = inp.value; onDirty && onDirty(); });
+  return inp;
 }
 
 export function lightbox(url, name){
@@ -223,7 +263,22 @@ export async function renderForm(rec, groups, entKey, onDirty){
         cell.appendChild(photoTile(
           () => rec[f.k],
           (v) => { rec[f.k] = v; },
-          f.preset || 'thumb', onDirty));
+          f.preset || 'thumb', onDirty, { big: f.full }));
+
+      } else if (f.t === 'seg'){
+        const seg = el('div', { class:'seg' });
+        const opts = refList(f.ref);
+        const draw = () => {
+          clear(seg);
+          for (const o of opts){
+            seg.appendChild(el('button', {
+              class:'seg-btn' + (rec[f.k] === o ? ' on' : ''), text:o,
+              onclick: () => { rec[f.k] = o; onDirty && onDirty(); draw(); }
+            }));
+          }
+        };
+        draw();
+        cell.appendChild(seg);
 
       } else if (f.t === 'photos'){
         const n = f.n || 2;

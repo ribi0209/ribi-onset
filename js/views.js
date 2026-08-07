@@ -1,40 +1,45 @@
 /* =====================================================================
  * Ribi Onset — views.js
- * 엔티티 리스트 + 에디터, 프로젝트, 레퍼런스, 백업, 대시보드
+ * 화면: Project / Overview / 엔티티 리스트+에디터 / Setting / Backup
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ENTITIES, ENTITY_ORDER, PROJECT_SCHEMA, REF_GROUPS, fieldMap } from './schema.js';
+import {
+  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, labelOf
+} from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
-  refList, nowDate, nowTime, fmtBytes, lightbox
+  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField
 } from './ui.js';
 import { ingest, pickFiles } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
 
 const PAGE = 60;
-
-/* 뷰별 상태 유지 (탭 전환해도 필터/선택 유지) */
 const STATE = {};
 function st(ent){
   if (!STATE[ent]) STATE[ent] = { q:'', filters:{}, selected:null, limit:PAGE, sort:'new' };
   return STATE[ent];
 }
 
-let saveTimer = null;
+/* ---------------- 자동 저장 ---------------- */
+
+const timers = new Map();
 function autosave(store, rec, after){
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  const key = store + ':' + rec.id;
+  clearTimeout(timers.get(key));
+  timers.set(key, setTimeout(async () => {
     await DB.put(store, rec);
     const dot = $('#saveDot'); if (dot){ dot.classList.add('on'); setTimeout(()=>dot.classList.remove('on'), 900); }
+    timers.delete(key);
     after && after();
-  }, 500);
+  }, 500));
 }
-async function flushSave(){
-  if (saveTimer){ clearTimeout(saveTimer); saveTimer = null; }
+async function flushAll(){
+  for (const [, t] of timers) clearTimeout(t);
+  timers.clear();
 }
 
-/* ===================== 엔티티 뷰 ===================== */
+/* ===================== 엔티티 리스트 + 에디터 ===================== */
 
 export async function entityView(root, entKey){
   const cfg = ENTITIES[entKey];
@@ -46,9 +51,17 @@ export async function entityView(root, entKey){
   root.appendChild(el('div', { class:'split' }, [listPane, editPane]));
 
   let rows = await DB.list(cfg.store);
+  let cutIndex = entKey === 'scenes' ? await cutsBySceneMap() : null;
 
-  /* ---- 필터 / 검색 바 ---- */
-  const search = el('input', { class:'inp search', placeholder:`${cfg.label} 검색 (전체 필드)`, value:S.q });
+  async function cutsBySceneMap(){
+    const all = await DB.list('cuts');
+    const m = {};
+    for (const c of all) (m[c.sceneId] = m[c.sceneId] || []).push(c);
+    return m;
+  }
+
+  /* ---- 검색 / 필터 ---- */
+  const search = el('input', { class:'inp search', placeholder:`${cfg.label} 검색`, value:S.q });
   search.addEventListener('input', () => { S.q = search.value; S.limit = PAGE; drawList(); });
 
   const filterBar = el('div', { class:'filterbar' });
@@ -56,7 +69,7 @@ export async function entityView(root, entKey){
     clear(filterBar);
     for (const f of (cfg.filters || [])){
       const sel = el('select', { class:'inp mini' });
-      sel.appendChild(el('option', { value:'', text: f.label }));
+      sel.appendChild(el('option', { value:'', text:f.label }));
       const vals = Array.from(new Set([...(refList(f.ref)||[]), ...rows.map(r => r[f.k]).filter(Boolean)]));
       for (const v of vals) sel.appendChild(el('option', { value:v, text:v }));
       sel.value = S.filters[f.k] || '';
@@ -79,37 +92,32 @@ export async function entityView(root, entKey){
     }
   }
 
-  /* ---- 액션 바 ---- */
   const actions = el('div', { class:'row gap wrap actionbar' }, [
-    el('button', { class:'btn primary', text:`+ 새 ${cfg.label}`, onclick: () => newRecord(false) }),
-    (entKey === 'scenes' || cfg.thumbField)
-      ? el('button', { class:'btn', text:'📷 촬영 + 등록', onclick: () => newRecord(true) }) : null,
+    el('button', { class:'btn primary', text:`+ ${cfg.label}`, onclick: () => newRecord(false) }),
+    el('button', { class:'btn', text:'📷 촬영 + 등록', onclick: () => newRecord(true) }),
     el('button', { class:'btn ghost', text:'CSV', onclick: () => exportCSV(entKey, filtered()) }),
     entKey === 'scenes'
-      ? el('button', { class:'btn ghost', text:'브레이크다운', onclick: () => exportBreakdown(filtered()) }) : null,
-    el('button', { class:'btn ghost', text:'PDF 인쇄', onclick: () => exportPrint(entKey, filtered()) }),
+      ? el('button', { class:'btn ghost', text:'Breakdown', onclick: () => exportBreakdown(filtered()) }) : null,
+    el('button', { class:'btn ghost', text:'PDF', onclick: () => exportPrint(entKey, filtered()) }),
   ]);
 
   const countEl = el('div', { class:'dim count' });
   const listEl  = el('div', { class:'reclist' });
   listEl.addEventListener('scroll', () => {
     if (listEl.scrollTop + listEl.clientHeight > listEl.scrollHeight - 200){
-      const n = filtered().length;
-      if (S.limit < n){ S.limit += PAGE; drawList(true); }
+      if (S.limit < filtered().length){ S.limit += PAGE; drawList(true); }
     }
   });
 
   listPane.append(actions, search, filterBar, countEl, listEl);
   buildFilters();
 
-  /* ---- 필터링 ---- */
   function filtered(){
     const q = (S.q || '').trim().toLowerCase();
     let out = rows.filter(r => {
       for (const [k,v] of Object.entries(S.filters)) if (v && (r[k] || '') !== v) return false;
       if (!q) return true;
-      return Object.entries(r).some(([k,val]) =>
-        typeof val === 'string' && val.toLowerCase().includes(q));
+      return Object.entries(r).some(([k,val]) => typeof val === 'string' && val.toLowerCase().includes(q));
     });
     const key = (r) => cfg.titleFields.map(k => r[k] || '').join('|');
     if (S.sort === 'new')  out.sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
@@ -118,16 +126,15 @@ export async function entityView(root, entKey){
     return out;
   }
 
-  /* ---- 리스트 ---- */
   let rendered = 0;
   async function drawList(append = false){
     const f = filtered();
-    countEl.textContent = `${f.length} / ${rows.length} 건`;
+    countEl.textContent = `${f.length} / ${rows.length}`;
     if (!append){ clear(listEl); rendered = 0; }
     const slice = f.slice(rendered, S.limit);
     for (const r of slice) listEl.appendChild(await rowEl(r));
     rendered += slice.length;
-    if (!f.length) listEl.appendChild(el('div', { class:'empty', text:'레코드가 없습니다.' }));
+    if (!f.length) listEl.appendChild(el('div', { class:'empty', text:'기록이 없습니다.' }));
   }
 
   async function rowEl(r){
@@ -142,48 +149,47 @@ export async function entityView(root, entKey){
 
     const tags = el('div', { class:'tags' });
     for (const k of (cfg.listCols || []).slice(0, 6)){
-      if (!r[k]) continue;
-      if (cfg.titleFields.includes(k)) continue;
-      tags.appendChild(el('span', { class:'tag t-'+k, text: r[k] }));
+      if (!r[k] || cfg.titleFields.includes(k)) continue;
+      tags.appendChild(el('span', { class:'tag t-'+k, text:r[k] }));
+    }
+    if (entKey === 'scenes'){
+      const cs = (cutIndex[r.id] || []);
+      if (cs.length){
+        const takes = cs.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);
+        tags.appendChild(el('span', { class:'tag t-cut', text:`컷 ${cs.length}${takes ? ' · 테이크 '+takes : ''}` }));
+      }
     }
 
-    const node = el('div', {
-      class:'rec' + (S.selected === r.id ? ' on' : ''),
-      dataset:{ id:r.id },
+    return el('div', {
+      class:'rec' + (S.selected === r.id ? ' on' : ''), dataset:{ id:r.id },
       onclick: () => select(r.id)
     }, [ thumb, el('div', { class:'rec-body' }, [
-        el('div', { class:'rec-title', text:title }),
-        sub ? el('div', { class:'rec-sub dim', text:sub }) : null,
-        tags
-      ]) ]);
-    return node;
+      el('div', { class:'rec-title', text:title }),
+      sub ? el('div', { class:'rec-sub dim', text:sub }) : null,
+      tags
+    ]) ]);
   }
 
   /* ---- 신규 ---- */
   async function newRecord(withCapture){
     const project = await DB.getProject();
-    const base = {};
+    const base = { projectId: project.id };
     for (const g of cfg.groups) for (const f of g.fields){
       base[f.k] = (f.t === 'photos') ? new Array(f.n||2).fill(null)
                 : (f.t === 'photo') ? null
                 : (f.t === 'link') ? [] : '';
     }
-    // 직전 레코드 값 상속
     if (cfg.inherit){
       const last = rows.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
       if (last) for (const k of cfg.inherit) if (last[k]) base[k] = last[k];
     }
-    if (entKey === 'scenes'){
-      base.project = project.name || '';
-      base.status = base.status || (refList('statuses')[0] || '');
-      base.id = DB.makeSceneId(project.name);
-    } else {
-      base.id = DB.makeId(cfg.idPrefix || 'REC');
-    }
+    base.id = (entKey === 'scenes') ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix || 'REC');
     if (cfg.autoStamp){
       base[cfg.autoStamp.date] = nowDate();
       base[cfg.autoStamp.time] = nowTime();
     }
+    if (entKey === 'scenes') base.status = base.status || refList('statuses')[0] || '';
+
     if (withCapture){
       const files = await pickFiles({ capture:true });
       if (files.length){
@@ -195,33 +201,40 @@ export async function entityView(root, entKey){
     }
     await DB.put(cfg.store, base);
     rows = await DB.list(cfg.store);
+    if (entKey === 'scenes') cutIndex = await cutsBySceneMap();
     S.selected = base.id;
     buildFilters(); await drawList(); await select(base.id);
-    toast(`${cfg.label} 생성: ${base.id}`);
+    toast(`${cfg.label} 생성`);
   }
 
   /* ---- 에디터 ---- */
   async function select(id){
-    await flushSave();
+    await flushAll();
     S.selected = id;
     const rec = await DB.get(cfg.store, id);
-    for (const n of listEl.children) n.classList.toggle('on', n.dataset && n.dataset.id === id);
+    for (const n of listEl.children) if (n.dataset) n.classList.toggle('on', n.dataset.id === id);
     clear(editPane);
-    if (!rec){ editPane.appendChild(el('div', { class:'empty', text:'좌측에서 레코드를 선택하세요.' })); return; }
+    if (!rec){ editPane.appendChild(el('div', { class:'empty', text:'좌측에서 선택하세요.' })); return; }
+
+    const refreshRow = async () => {
+      rows = await DB.list(cfg.store);
+      if (entKey === 'scenes') cutIndex = await cutsBySceneMap();
+      const node = Array.from(listEl.children).find(n => n.dataset && n.dataset.id === rec.id);
+      if (node){ const nn = await rowEl(rec); nn.classList.add('on'); node.replaceWith(nn); }
+    };
 
     const head = el('div', { class:'edit-head' }, [
       el('div', {}, [
         el('div', { class:'idline' }, [
-          el('code', { text: rec.id }),
+          el('code', { text:rec.id }),
           el('span', { id:'saveDot', class:'savedot', title:'자동 저장됨' })
         ]),
-        el('div', { class:'dim tiny', text:`생성 ${(rec.createdAt||'').slice(0,19).replace('T',' ')} · 수정 ${(rec.updatedAt||'').slice(0,19).replace('T',' ')}` })
+        el('div', { class:'dim tiny', text:`수정 ${(rec.updatedAt||'').slice(0,19).replace('T',' ')}` })
       ]),
       el('div', { class:'row gap' }, [
         el('button', { class:'btn ghost', text:'복제', onclick: async () => {
           const copy = JSON.parse(JSON.stringify(rec));
           copy.id = entKey === 'scenes' ? DB.makeSceneId((await DB.getProject()).name) : DB.makeId(cfg.idPrefix||'REC');
-          // 이미지는 참조만 공유하지 않고 비운다 (삭제 시 원본 유실 방지)
           for (const g of cfg.groups) for (const f of g.fields){
             if (f.t === 'photo') copy[f.k] = null;
             if (f.t === 'photos') copy[f.k] = new Array(f.n||2).fill(null);
@@ -233,25 +246,28 @@ export async function entityView(root, entKey){
           toast('복제 완료');
         }}),
         el('button', { class:'btn danger', text:'삭제', onclick: async () => {
-          if (!await confirmBox(`${cfg.label} 삭제`, `${rec.id} 을(를) 삭제합니다. 되돌릴 수 없습니다.`, '삭제', true)) return;
+          const nCuts = entKey === 'scenes' ? (await DB.listCuts(rec.id)).length : 0;
+          const msg = nCuts ? `이 씬과 하위 컷 ${nCuts}개가 함께 삭제됩니다.` : '되돌릴 수 없습니다.';
+          if (!await confirmBox(`${cfg.label} 삭제`, msg, '삭제', true)) return;
           await DB.del(cfg.store, rec.id);
-          rows = await DB.list(cfg.store); S.selected = null;
-          await drawList(); clear(editPane);
+          rows = await DB.list(cfg.store);
+          if (entKey === 'scenes') cutIndex = await cutsBySceneMap();
+          S.selected = null; await drawList(); clear(editPane);
           editPane.appendChild(el('div', { class:'empty', text:'삭제되었습니다.' }));
           toast('삭제 완료', 'warn');
         }}),
       ])
     ]);
 
-    const form = await renderForm(rec, cfg.groups, entKey, () => {
-      autosave(cfg.store, rec, async () => {
-        rows = await DB.list(cfg.store);
-        const node = Array.from(listEl.children).find(n => n.dataset && n.dataset.id === rec.id);
-        if (node){ const nn = await rowEl(rec); nn.classList.add('on'); node.replaceWith(nn); }
-      });
-    });
+    const form = await renderForm(rec, cfg.groups, entKey,
+      () => autosave(cfg.store, rec, refreshRow));
 
     editPane.append(head, form);
+
+    // 씬이면 하위 컷 섹션을 붙인다
+    if (entKey === 'scenes'){
+      editPane.appendChild(await cutsSection(rec, refreshRow));
+    }
     editPane.scrollTop = 0;
   }
 
@@ -260,32 +276,298 @@ export async function entityView(root, entKey){
   else editPane.appendChild(el('div', { class:'empty', text:`좌측에서 ${cfg.label}을(를) 선택하거나 새로 만드세요.` }));
 }
 
-/* ===================== 프로젝트 ===================== */
+/* ===================== 씬 하위 컷 / 테이크 ===================== */
 
-export async function projectView(root){
+async function cutsSection(scene, onChange){
+  const cfg = ENTITIES.cuts;
+  const wrap = el('section', { class:'cuts-sec' });
+  let cuts = await DB.listCuts(scene.id);
+
+  const body = el('div', { class:'cut-list' });
+
+  async function addCut(){
+    const last = cuts[cuts.length - 1];
+    const rec = {
+      id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
+      cutNo: String(cuts.length + 1),
+      vfxType: last ? last.vfxType : '', workElement:'',
+      status: last ? last.status : (refList('statuses')[0] || ''),
+      vendor: last ? last.vendor : '',
+      vfxShotId:'', shotNote:'', plateNote:'',
+      thumbnail:null, photos:[null,null,null], takes:[],
+    };
+    await DB.put('cuts', rec);
+    cuts = await DB.listCuts(scene.id);
+    await draw(rec.id);
+    onChange && onChange();
+  }
+
+  async function draw(openId){
+    clear(body);
+    if (!cuts.length){
+      body.appendChild(el('div', { class:'empty tiny', text:'컷이 없습니다. 아래 + 컷 으로 추가하세요.' }));
+    }
+    for (const c of cuts) body.appendChild(await cutCard(c, c.id === openId));
+  }
+
+  async function cutCard(cut, open){
+    const card = el('article', { class:'cut-card' + (open ? ' open' : '') });
+    const nTakes = (cut.takes || []).length;
+    const nOk = (cut.takes || []).filter(t => t.state === 'OK').length;
+
+    const save = () => autosave('cuts', cut, () => { onChange && onChange(); });
+
+    /* --- 헤더 (항상 보임) --- */
+    const summary = el('div', { class:'cut-head', onclick:(e) => {
+      if (e.target.closest('button,input,select')) return;
+      card.classList.toggle('open');
+    }}, [
+      el('span', { class:'cut-no', text: 'C' + (cut.cutNo || '?') }),
+      el('span', { class:'tag t-vfxType', text: cut.vfxType || '타입 미정' }),
+      cut.workElement ? el('span', { class:'tag', text: cut.workElement }) : null,
+      el('span', { class:'tag t-status', text: cut.status || '' }),
+      el('span', { class:'dim tiny', text: nTakes ? `테이크 ${nTakes} (OK ${nOk})` : '테이크 없음' }),
+      el('span', { class:'grow' }),
+      el('button', { class:'btn tiny danger', text:'삭제', onclick: async (e) => {
+        e.stopPropagation();
+        if (!await confirmBox('컷 삭제', `C${cut.cutNo} 과 테이크 ${nTakes}개가 삭제됩니다.`, '삭제', true)) return;
+        await DB.del('cuts', cut.id);
+        cuts = await DB.listCuts(scene.id);
+        await draw(); onChange && onChange();
+        toast('컷 삭제', 'warn');
+      }}),
+      el('span', { class:'chev', text:'▾' }),
+    ]);
+
+    /* --- 본문 --- */
+    const grid = el('div', { class:'grid cut-grid' });
+    for (const g of cfg.groups){
+      for (const f of g.fields){
+        if (f.t === 'photos') continue;                 // 참고 사진은 아래 별도
+        const cell = el('div', { class:'field' + (f.full ? ' full' : '') });
+        cell.appendChild(el('label', { text:f.label }));
+        if (f.t === 'photo'){
+          cell.appendChild(photoTile(() => cut[f.k], (v) => { cut[f.k] = v; }, 'thumb', save));
+        } else if (f.t === 'textarea'){
+          const ta = el('textarea', { class:'inp ta', rows:2 });
+          ta.value = cut[f.k] || '';
+          ta.addEventListener('input', () => { cut[f.k] = ta.value; save(); });
+          cell.appendChild(ta);
+        } else {
+          cell.appendChild(miniField(f, cut, save));
+        }
+        grid.appendChild(cell);
+      }
+    }
+
+    const takesBox = el('div', { class:'takes' });
+    async function drawTakes(){
+      clear(takesBox);
+      if (!Array.isArray(cut.takes)) cut.takes = [];
+      takesBox.appendChild(el('div', { class:'takes-head' }, [
+        el('h5', { text:`TAKES (${cut.takes.length})` }),
+        el('span', { class:'grow' }),
+        el('button', { class:'btn tiny primary', text:'+ 테이크', onclick: async () => {
+          const prev = cut.takes[cut.takes.length - 1] || {};
+          cut.takes.push({
+            takeNo: String(cut.takes.length + 1),
+            camRoll: prev.camRoll || '', clip:'', tc:'', state:'',
+            fps: prev.fps || '', shutter: prev.shutter || '', iris: prev.iris || '',
+            ei: prev.ei || '', nd: prev.nd || '', wb: prev.wb || '', lens: prev.lens || '',
+            note:'', monitor:null,
+          });
+          save(); await drawTakes();
+        }}),
+      ]));
+
+      if (!cut.takes.length){
+        takesBox.appendChild(el('div', { class:'empty tiny', text:'모니터를 찍어 테이크를 남기세요.' }));
+        return;
+      }
+
+      const table = el('div', { class:'take-table' });
+      table.appendChild(el('div', { class:'take-row hdr' }, [
+        el('span', { class:'tk-mon', text:'모니터' }),
+        ...TAKE_FIELDS.map(f => el('span', { class:'tk-'+f.k, text:f.label })),
+        el('span', { class:'tk-del' }),
+      ]));
+      for (let i = 0; i < cut.takes.length; i++){
+        const tk = cut.takes[i];
+        const row = el('div', { class:'take-row' });
+        row.appendChild(el('span', { class:'tk-mon' }, [
+          photoTile(() => tk.monitor, (v) => { tk.monitor = v; }, 'plate', save, { label:'모니터' })
+        ]));
+        for (const f of TAKE_FIELDS){
+          row.appendChild(el('span', { class:'tk-'+f.k }, [ miniField(f, tk, save) ]));
+        }
+        row.appendChild(el('span', { class:'tk-del' }, [
+          el('button', { class:'btn tiny ghost', text:'×', title:'테이크 삭제', onclick: async () => {
+            if (tk.monitor && tk.monitor.mid) await DB.delMedia(tk.monitor.mid);
+            cut.takes.splice(i,1); save(); await drawTakes();
+          }})
+        ]));
+        table.appendChild(row);
+      }
+      takesBox.appendChild(table);
+    }
+    await drawTakes();
+
+    const photosBox = el('div', { class:'field full' }, [ el('label', { text:'참고 사진' }) ]);
+    if (!Array.isArray(cut.photos)) cut.photos = [null,null,null];
+    const pg = el('div', { class:'photo-grid' });
+    for (let i = 0; i < 3; i++){
+      pg.appendChild(photoTile(() => cut.photos[i], (v) => { cut.photos[i] = v; }, 'photo', save));
+    }
+    photosBox.appendChild(pg);
+
+    card.append(summary, el('div', { class:'cut-body' }, [ grid, takesBox, photosBox ]));
+    return card;
+  }
+
+  await draw();
+  wrap.append(
+    el('div', { class:'row between sec-head' }, [
+      el('h4', { text:'CUTS' }),
+      el('button', { class:'btn primary', text:'+ 컷', onclick: addCut }),
+    ]),
+    body
+  );
+  return wrap;
+}
+
+/* ===================== PROJECT ===================== */
+
+export async function projectView(root, reload){
   clear(root);
   const p = await DB.getProject();
+  const pane = el('div', { class:'pane single' });
+
+  const head = el('div', { class:'row between sec-head' }, [
+    el('h2', { text:'Project' }),
+    el('div', { class:'row gap' }, [
+      el('button', { class:'btn', text:'+ 새 프로젝트', onclick: async () => {
+        const np = await DB.createProject({ name:'새 프로젝트' });
+        toast('프로젝트 생성 — 이름을 입력하세요');
+        reload && reload();
+      }}),
+      el('button', { class:'btn danger', text:'이 프로젝트 삭제', onclick: async () => {
+        const all = await DB.listProjects();
+        if (all.length <= 1){ toast('마지막 프로젝트는 삭제할 수 없습니다', 'warn'); return; }
+        const c = await DB.list('scenes');
+        if (!await confirmBox('프로젝트 삭제',
+          `"${p.name}" 과 그 안의 씬 ${c.length}건이 모두 삭제됩니다. 되돌릴 수 없습니다.`, '삭제', true)) return;
+        await DB.deleteProject(p.id);
+        toast('삭제 완료', 'warn'); reload && reload();
+      }}),
+    ])
+  ]);
+
   let t = null;
   const form = await renderForm(p, PROJECT_SCHEMA.groups, 'project', () => {
     clearTimeout(t);
     t = setTimeout(async () => {
       await DB.setProject(p);
-      const brand = $('#projName'); if (brand) brand.textContent = p.name || '';
-      toast('프로젝트 저장됨', 'ok', 1200);
+      const sel = $('#projSel');
+      if (sel){ const o = Array.from(sel.options).find(o => o.value === p.id); if (o) o.textContent = p.name || '(이름 없음)'; }
+      toast('저장됨', 'ok', 1000);
     }, 500);
   });
-  root.appendChild(el('div', { class:'pane single' }, [
-    el('h2', { text:'프로젝트' }),
-    form
+
+  pane.append(head, form);
+  root.appendChild(pane);
+}
+
+/* ===================== OVERVIEW ===================== */
+
+export async function overviewView(root, go){
+  clear(root);
+  const p = await DB.getProject();
+  const scenes = await DB.list('scenes');
+  const cuts   = await DB.list('cuts');
+  const sceneById = Object.fromEntries(scenes.map(s => [s.id, s]));
+
+  const takes = cuts.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);
+  const okTakes = cuts.reduce((a,c) => a + (c.takes||[]).filter(t => t.state === 'OK').length, 0);
+
+  const by = (fn) => {
+    const m = {};
+    for (const c of cuts){ const k = fn(c); if (k) m[k] = (m[k]||0)+1; }
+    return m;
+  };
+  const byType   = by(c => c.vfxType || '미분류');
+  const byEp     = by(c => (sceneById[c.sceneId]||{}).episode);
+  const byStatus = by(c => c.status || '미지정');
+  const byVendor = by(c => c.vendor);
+  const byLoc    = by(c => (sceneById[c.sceneId]||{}).location);
+  const byElem   = by(c => c.workElement);
+
+  const done = byStatus['완료'] || 0;
+  const pct = cuts.length ? Math.round(done / cuts.length * 100) : 0;
+
+  const posterURL = p.poster && p.poster.mid ? await DB.mediaURL(p.poster.mid) : null;
+
+  function bars(obj, cls, max){
+    const entries = Object.entries(obj).sort((a,b)=>b[1]-a[1]);
+    if (!entries.length) return el('div', { class:'empty tiny', text:'데이터 없음' });
+    const top = Math.max(1, ...entries.map(e => e[1]));
+    return el('div', { class:'bars '+cls },
+      entries.slice(0, max || 99).map(([k,v]) => el('div', { class:'bar-row' }, [
+        el('span', { class:'bar-k', text:k, title:k }),
+        el('span', { class:'bar-t' }, [ el('i', { style:`width:${v/top*100}%` }) ]),
+        el('b', { text:String(v) })
+      ])));
+  }
+
+  root.appendChild(el('div', { class:'pane single dash' }, [
+    el('div', { class:'proj-head' }, [
+      posterURL ? el('img', { class:'poster', src:posterURL, onclick:()=>lightbox(posterURL,p.name) })
+                : el('div', { class:'poster ph', text:'◧' }),
+      el('div', { class:'grow' }, [
+        el('h1', { text: p.name || '(프로젝트명 미설정)' }),
+        el('div', { class:'dim', text:[p.type, p.season, p.productionCompany, p.distributor].filter(Boolean).join(' · ') }),
+        el('div', { class:'dim tiny', text:`크랭크인 ${p.crankIn||'—'} · 크랭크업 ${p.crankUp||'—'} · 납품 ${p.deliveryDate||'—'}` }),
+        el('div', { class:'dim tiny', text:`딜리버리 ${[p.deliveryResolution,p.deliveryFps&&p.deliveryFps+'fps',p.deliveryCodec,p.deliveryColorSpace].filter(Boolean).join(' / ')||'—'}` }),
+        el('div', { class:'progress-wrap' }, [
+          el('div', { class:'progress' }, [ el('i', { style:`width:${pct}%` }) ]),
+          el('span', { class:'dim tiny', text:`완료 ${done} / ${cuts.length} 컷 (${pct}%)` })
+        ])
+      ])
+    ]),
+
+    el('div', { class:'stats big' }, [
+      el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(scenes.length)}), el('span',{text:'Scene'}) ]),
+      el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(cuts.length)}), el('span',{text:'Cut (VFX 물량)'}) ]),
+      el('div', { class:'stat' }, [ el('b',{text:String(takes)}), el('span',{text:`Take (OK ${okTakes})`}) ]),
+      el('div', { class:'stat click', onclick:()=>go('locations') }, [ el('b',{text:String((await DB.list('locations')).length)}), el('span',{text:'Location'}) ]),
+      el('div', { class:'stat click', onclick:()=>go('assets') }, [ el('b',{text:String((await DB.list('assets')).length)}), el('span',{text:'Asset'}) ]),
+      el('div', { class:'stat click', onclick:()=>go('hdri') }, [ el('b',{text:String((await DB.list('hdri')).length)}), el('span',{text:'HDRI'}) ]),
+    ]),
+
+    el('div', { class:'dash-grid' }, [
+      el('div', { class:'card wide' }, [ el('h4',{text:'작업 타입별 컷 수'}), bars(byType,'v') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'에피소드별 컷 수'}), bars(byEp,'e') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'상태별'}), bars(byStatus,'s') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'벤더별'}), bars(byVendor,'s') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'로케이션별'}), bars(byLoc,'e', 10) ]),
+      el('div', { class:'card' }, [ el('h4',{text:'작업 요소 TOP 10'}), bars(byElem,'v', 10) ]),
+    ]),
+
+    el('div', { class:'row gap wrap' }, [
+      el('button', { class:'btn primary big', text:'📷 현장 기록 시작', onclick:()=>go('scenes') }),
+      el('button', { class:'btn', text:'Breakdown 출력', onclick: async () => exportBreakdown(await DB.list('scenes')) }),
+    ])
   ]));
 }
 
-/* ===================== 레퍼런스 ===================== */
+/* ===================== SETTING (레퍼런스) ===================== */
 
-export async function refsView(root){
+export async function settingsView(root){
   clear(root);
   const refs = await DB.getRefs();
-  const wrap = el('div', { class:'pane single' }, [ el('h2', { text:'레퍼런스 (드롭다운 목록)' }) ]);
+  const wrap = el('div', { class:'pane single' }, [
+    el('h2', { text:'Setting' }),
+    el('p', { class:'dim tiny', text:'드롭다운 목록은 모든 프로젝트가 함께 씁니다. 현장에서 새 값을 입력하면 자동으로 여기에 추가됩니다.' })
+  ]);
 
   const save = async () => { await DB.setRefs(refs); setRefsCache(await DB.getRefs()); };
 
@@ -302,7 +584,7 @@ export async function refsView(root){
         ])));
       };
       draw();
-      const add = el('input', { class:'inp mini', placeholder:'+ 항목 추가 후 Enter' });
+      const add = el('input', { class:'inp mini', placeholder:'+ 추가 후 Enter' });
       add.addEventListener('keydown', async (e) => {
         if (e.key !== 'Enter') return;
         const v = add.value.trim(); if (!v) return;
@@ -310,28 +592,28 @@ export async function refsView(root){
         add.value = ''; await save(); draw();
       });
       cards.appendChild(el('div', { class:'ref-card' }, [
-        el('div', { class:'row between' }, [
-          el('h4', { text:label }),
-          el('code', { class:'dim tiny', text:key })
-        ]),
+        el('div', { class:'row between' }, [ el('h4', { text:label }), el('code', { class:'dim tiny', text:key }) ]),
         chips, add
       ]));
     }
-    wrap.append(el('h3', { class:'sect', text: grp.title }), cards);
+    wrap.append(el('h3', { class:'sect', text:grp.title }), cards);
   }
   root.appendChild(wrap);
 }
 
-/* ===================== 백업 ===================== */
+/* ===================== BACKUP ===================== */
 
 export async function backupView(root, reload){
   clear(root);
   const info = await DB.storageInfo();
+  const proj = await DB.getProject();
   const pane = el('div', { class:'pane single' });
 
-  const statRows = ENTITY_ORDER.map(k => el('div', { class:'stat' }, [
-    el('b', { text: String(info.records[ENTITIES[k].store] ?? 0) }),
-    el('span', { text: ENTITIES[k].label })
+  const statRows = [
+    ['scenes','Scene'], ['cuts','Cut'], ['locations','Location'],
+    ['assets','Asset'], ['cameras','Camera'], ['hdri','HDRI'],
+  ].map(([k,l]) => el('div', { class:'stat' }, [
+    el('b', { text:String(info.records[k] ?? 0) }), el('span', { text:l })
   ]));
   statRows.push(el('div', { class:'stat' }, [ el('b',{text:String(info.media)}), el('span',{text:'이미지'}) ]));
 
@@ -346,26 +628,24 @@ export async function backupView(root, reload){
     if (!f) return;
     const p = progress(); p.set('파일 읽는 중', 3);
     try {
-      const text = await f.text();
-      const json = JSON.parse(text);
-      const stats = await DB.importBackup(json, pendingMode, (m, pc) => p.set(m, pc));
+      const json = JSON.parse(await f.text());
+      const s = await DB.importBackup(json, pendingMode, (m, pc) => p.set(m, pc));
       setRefsCache(await DB.getRefs());
-      toast(`가져오기 완료 · 씬 ${stats.scenes} / 로케 ${stats.locations} / 에셋 ${stats.assets} / 카메라 ${stats.cameras} / HDRI ${stats.hdri} / 이미지 ${stats.media}`, 'ok', 5000);
+      toast(`가져오기 완료 · 프로젝트 ${s.projects} / 씬 ${s.scenes} / 컷 ${s.cuts} / 로케 ${s.locations} / 에셋 ${s.assets} / 이미지 ${s.media}`, 'ok', 6000);
       reload && reload();
-    } catch (e){
-      toast('가져오기 실패: ' + e.message, 'err', 6000);
-    } finally { p.done(); }
+    } catch (e){ toast('가져오기 실패: ' + e.message, 'err', 6000); }
+    finally { p.done(); }
   });
 
-  async function doExport(withMedia){
+  async function doExport(withMedia, scope){
     const p = progress(); p.set('백업 생성 중', 20);
     try {
-      const data = await DB.exportBackup(withMedia);
+      const data = await DB.exportBackup(withMedia, scope);
       p.set('직렬화 중', 70);
       const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
-      const proj = await DB.getProject();
-      const name = `${DB.slugOf(proj.name)}_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.json`;
-      const a = el('a', { href: URL.createObjectURL(blob), download: name });
+      const tag = scope ? DB.slugOf(proj.name) : 'ALL';
+      const name = `${tag}_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.json`;
+      const a = el('a', { href: URL.createObjectURL(blob), download:name });
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
       toast(`${name} (${fmtBytes(blob.size)})`);
@@ -374,21 +654,22 @@ export async function backupView(root, reload){
   }
 
   pane.append(
-    el('h2', { text:'백업 / 데이터' }),
+    el('h2', { text:'Backup' }),
+    el('p', { class:'dim', text:`현재 프로젝트: ${proj.name || '(이름 없음)'} · 전체 프로젝트 ${info.projects}개` }),
     el('div', { class:'stats' }, statRows),
-    el('p', { class:'dim', text:`저장소 사용량 ${usage}` }),
+    el('p', { class:'dim tiny', text:`저장소 사용량 ${usage}` }),
 
     el('h3', { class:'sect', text:'내보내기' }),
     el('div', { class:'row gap wrap' }, [
-      el('button', { class:'btn primary', text:'전체 백업 (이미지 포함)', onclick: () => doExport(true) }),
-      el('button', { class:'btn', text:'경량 백업 (이미지 제외)', onclick: () => doExport(false) }),
+      el('button', { class:'btn primary', text:'현재 프로젝트 (이미지 포함)', onclick: () => doExport(true, proj.id) }),
+      el('button', { class:'btn', text:'현재 프로젝트 (경량)', onclick: () => doExport(false, proj.id) }),
+      el('button', { class:'btn ghost', text:'전체 프로젝트', onclick: () => doExport(true, null) }),
     ]),
-    el('p', { class:'dim tiny', text:'전체 백업은 기존 온셋 백업(v3)과 동일한 구조라 상호 호환됩니다.' }),
 
     el('h3', { class:'sect', text:'가져오기' }),
     el('div', { class:'row gap wrap' }, [
       el('button', { class:'btn', text:'덮어쓰기 가져오기', onclick: async () => {
-        if (!await confirmBox('덮어쓰기 가져오기', '현재 기기의 모든 데이터를 지우고 파일 내용으로 교체합니다.', '진행', true)) return;
+        if (!await confirmBox('덮어쓰기 가져오기', '이 기기의 모든 프로젝트와 기록을 지우고 파일 내용으로 교체합니다.', '진행', true)) return;
         pendingMode = 'replace'; fileInput.click();
       }}),
       el('button', { class:'btn ghost', text:'병합 가져오기', onclick: () => { pendingMode = 'merge'; fileInput.click(); } }),
@@ -402,76 +683,9 @@ export async function backupView(root, reload){
       }}),
       el('button', { class:'btn ghost', text:'영구 저장 요청', onclick: async () => {
         const ok = await DB.requestPersist();
-        toast(ok ? '영구 저장 허용됨 (브라우저가 데이터를 임의 삭제하지 않음)' : '브라우저가 거부했습니다', ok ? 'ok' : 'warn', 4000);
-      }}),
-      el('button', { class:'btn danger', text:'전체 초기화', onclick: async () => {
-        if (!await confirmBox('전체 초기화', '이 기기의 모든 데이터가 삭제됩니다. 먼저 백업했는지 확인하세요.', '초기화', true)) return;
-        for (const s of DB.RECORD_STORES) await DB.clearStore(s);
-        await DB.clearStore('media'); await DB.setProject(DB.DEFAULT_PROJECT);
-        toast('초기화 완료', 'warn'); reload && reload();
+        toast(ok ? '영구 저장 허용됨' : '브라우저가 거부했습니다', ok ? 'ok' : 'warn', 4000);
       }}),
     ]),
   );
   root.appendChild(pane);
-}
-
-/* ===================== 대시보드 ===================== */
-
-export async function dashView(root, go){
-  clear(root);
-  const p = await DB.getProject();
-  const counts = {};
-  for (const k of ENTITY_ORDER) counts[k] = (await DB.list(ENTITIES[k].store)).length;
-  const scenes = await DB.list('scenes');
-
-  const byStatus = {};
-  const byEp = {};
-  const byVfx = {};
-  for (const c of scenes){
-    byStatus[c.status || '미지정'] = (byStatus[c.status||'미지정']||0)+1;
-    if (c.episode) byEp[c.episode] = (byEp[c.episode]||0)+1;
-    if (c.vfxA) byVfx[c.vfxA] = (byVfx[c.vfxA]||0)+1;
-  }
-  const today = nowDate();
-  const todayScenes = scenes.filter(c => c.shootDate === today).length;
-
-  const posterURL = p.poster && p.poster.mid ? await DB.mediaURL(p.poster.mid) : null;
-
-  function bars(obj, cls){
-    const max = Math.max(1, ...Object.values(obj));
-    return el('div', { class:'bars '+cls },
-      Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,v]) => el('div', { class:'bar-row' }, [
-        el('span', { class:'bar-k', text:k }),
-        el('span', { class:'bar-t' }, [ el('i', { style:`width:${v/max*100}%` }) ]),
-        el('b', { text:String(v) })
-      ])));
-  }
-
-  root.appendChild(el('div', { class:'pane single dash' }, [
-    el('div', { class:'proj-head' }, [
-      posterURL ? el('img', { class:'poster', src:posterURL, onclick:()=>lightbox(posterURL,p.name) }) : el('div',{class:'poster ph',text:'◧'}),
-      el('div', {}, [
-        el('h1', { text: p.name || '(프로젝트명 미설정)' }),
-        el('div', { class:'dim', text: [p.type, p.productionCompany, p.distributor].filter(Boolean).join(' · ') }),
-        el('div', { class:'dim tiny', text: `크랭크인 ${p.crankIn||'—'} · 크랭크업 ${p.crankUp||'—'}` }),
-        el('div', { class:'dim tiny', text: `딜리버리 ${[p.deliveryResolution,p.deliveryFps+'fps',p.deliveryCodec].filter(Boolean).join(' / ')}` }),
-      ])
-    ]),
-    el('div', { class:'stats big' }, [
-      el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(counts.scenes)}), el('span',{text:'씬'}) ]),
-      el('div', { class:'stat click', onclick:()=>go('locations') }, [ el('b',{text:String(counts.locations)}), el('span',{text:'로케이션'}) ]),
-      el('div', { class:'stat click', onclick:()=>go('hdri') }, [ el('b',{text:String(counts.hdri)}), el('span',{text:'HDRI·조명'}) ]),
-      el('div', { class:'stat click', onclick:()=>go('assets') }, [ el('b',{text:String(counts.assets)}), el('span',{text:'에셋'}) ]),
-      el('div', { class:'stat click', onclick:()=>go('cameras') }, [ el('b',{text:String(counts.cameras)}), el('span',{text:'카메라'}) ]),
-      el('div', { class:'stat' }, [ el('b',{text:String(todayScenes)}), el('span',{text:'오늘 기록'}) ]),
-    ]),
-    el('div', { class:'dash-grid' }, [
-      el('div', { class:'card' }, [ el('h4',{text:'상태별 씬'}), bars(byStatus,'s') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'에피소드별 씬'}), bars(byEp,'e') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'VFX A 분류'}), bars(byVfx,'v') ]),
-    ]),
-    el('div', { class:'row gap wrap' }, [
-      el('button', { class:'btn primary big', text:'📷 현장 씬 기록 시작', onclick:()=>go('scenes') }),
-    ])
-  ]));
 }
