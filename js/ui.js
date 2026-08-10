@@ -532,7 +532,12 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         const n = f.n || 2;
         if (!Array.isArray(rec[f.k])) rec[f.k] = new Array(n).fill(null);
         while (rec[f.k].length < n) rec[f.k].push(null);
-        const grid = el('div', { class:'photo-grid' });
+        // 열 수를 사진 개수에 맞춰 고정한다. auto-fill 이면 화면폭에 따라
+        // 마지막 줄에 한두 칸만 남아 어긋나 보인다.
+        const grid = el('div', {
+          class:'photo-grid' + (n <= 8 ? ' fixed' : ''),
+          style: n <= 8 ? `--pcols:${n}` : null,
+        });
         for (let i = 0; i < n; i++){
           grid.appendChild(photoTile(
             () => rec[f.k][i],

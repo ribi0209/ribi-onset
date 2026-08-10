@@ -150,6 +150,11 @@ select.inp.on{ border-color:var(--accent); color:var(--accent); }
 
 /* ---------- 사진 ---------- */
 .photo-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
+/* 사진 개수만큼 열을 고정해 한 행에 정확히 떨어지게 */
+.photo-grid.fixed{ grid-template-columns:repeat(var(--pcols,4), minmax(0,1fr)); }
+@media (max-width:1080px){
+  .photo-grid.fixed{ grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); }
+}
 .photo-tile{
   position:relative; aspect-ratio:4/3; border-radius:9px; overflow:hidden;
   background:var(--bg3); border:1px dashed var(--line);

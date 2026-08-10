@@ -191,8 +191,8 @@ console.log('== 로케이션 개편 ==');
   ok(!!sk, `S펜 스케치 필드 추가 (${sk && sk.label})`);
   const ph = L.groups.find(g=>g.title==='사진').fields;
   ok(ph.length===2, `사진 그룹 ${ph.length}종 (서베이 제거)`);
-  ok(ph.find(f=>f.k==='conceptPhotos').n===6, `컨셉 ${ph.find(f=>f.k==='conceptPhotos').n}장`);
-  ok(ph.find(f=>f.k==='locationPhotos').n===8, `현장 ${ph.find(f=>f.k==='locationPhotos').n}장`);
+  const nC = ph.find(f=>f.k==='conceptPhotos').n, nL = ph.find(f=>f.k==='locationPhotos').n;
+  ok(nC===7 && nL===7, `컨셉 ${nC}장 / 현장 ${nL}장 (동일)`);
   ok(!ph.some(f=>f.k==='surveyPhotos'), '서베이 사진 제거');
   ok(L.titleFields[0]==='mainLocation', '리스트 제목 = 대장소');
 
@@ -226,8 +226,11 @@ console.log('== 로케이션 개편 ==');
   ok(typeof sketchPad === 'function', 'sketchPad 공용 위젯 export');
   const tiles = main.querySelectorAll('.photo-grid');
   ok(tiles.length===2, `사진 그리드 2개 (${tiles.length})`);
-  ok(tiles[0].children.length===6 && tiles[1].children.length===8,
+  ok(tiles[0].children.length===7 && tiles[1].children.length===7,
      `컨셉 ${tiles[0].children.length}칸 / 현장 ${tiles[1].children.length}칸`);
+  ok(tiles[0].classList.contains('fixed') && tiles[1].classList.contains('fixed'), '사진 격자 열 수 고정');
+  ok(tiles[0].getAttribute('style')==='--pcols:7' && tiles[1].getAttribute('style')==='--pcols:7',
+     `열 수 = 사진 개수 (${tiles[0].getAttribute('style')}) → 항상 한 행에 딱 맞음`);
   await V.entityListView(main,'locations',()=>{}); await wait(250);
   const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
   ok(ths.includes('대장소') && ths.includes('소장소') && ths.includes('SET ID'), `표 헤더 ${ths.join(' / ')}`);

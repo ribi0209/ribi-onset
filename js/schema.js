@@ -29,7 +29,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v12 · 2026-08-07';
+export const BUILD = 'v13 · 2026-08-07';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -305,8 +305,8 @@ export const ENTITIES = {
         { k:'sketch',      label:'현장 스케치 (S펜)', t:'sketch', full:true },
       ]},
       { title:'사진', fields:[
-        { k:'conceptPhotos',  label:'컨셉',  t:'photos', n:6, full:true },
-        { k:'locationPhotos', label:'현장',  t:'photos', n:8, full:true },
+        { k:'conceptPhotos',  label:'컨셉',  t:'photos', n:7, full:true },
+        { k:'locationPhotos', label:'현장',  t:'photos', n:7, full:true },
       ]},
     ],
   },
