@@ -23,6 +23,9 @@
  *   sketch    S펜/손가락 필기 캔버스 → PNG 로 저장
  *   backlink  반대편에서 연결한 결과를 읽기 전용으로 표시 (from / via 속성)
  *
+ * 엔티티에 inline:true 를 주면 상세 페이지 없이 리스트에서 바로 편집한다.
+ * 이때 화면에 나올 항목/순서는 inlineFields 로 정한다.
+ *
  * 배치
  *   그룹에 cols:N 을 주면 N열 고정 격자가 되고, 필드의 span / rowSpan 으로
  *   칸을 차지한다. 좁은 화면에서는 자동으로 흐름 배치로 되돌아간다.
@@ -30,7 +33,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v14 · 2026-08-07';
+export const BUILD = 'v15 · 2026-08-07';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -344,10 +347,13 @@ export const ENTITIES = {
   },
 
   /* ============ CAMERA ============ */
+  /* inline:true → 상세 페이지 없이 리스트에서 바로 편집한다.
+     장비는 항목 수가 적고 한눈에 비교하는 게 중요해서 목록형이 낫다. */
   cameras: {
-    label:'Camera', labelKo:'카메라', title:'카메라 정보', desc:'바디·포맷·렌즈 등 촬영에 사용한 장비 사양을 기록합니다.',
+    label:'Camera', labelKo:'카메라', title:'카메라 정보', desc:'바디·포맷·렌즈 등 촬영 장비 사양을 목록에서 바로 입력합니다.',
     icon:'◎', store:'cameras', idPrefix:'CAM',
-    titleFields:['name'], subtitleFields:['camRoll','lensSeries'],
+    inline: true,
+    titleFields:['name'], subtitleFields:['camRoll'],
     thumbField:'photo',
     filters:[
       { k:'manufacturer', ref:'cameraManufacturers', label:'제조사' },
@@ -356,6 +362,20 @@ export const ENTITIES = {
     listCols:['camRoll','manufacturer','name','resolution','format','sensorMode','lensSeries'],
     csvCols:['id','camRoll','manufacturer','name','detailModel','resolution','aperture',
              'format','sensorMode','lensSeries','lensSet','notes','createdAt','updatedAt'],
+    /* 리스트에서 두 칸씩 짝지어 보여줄 순서 */
+    inlineFields:[
+      { k:'camRoll',      label:'Cam Roll',    t:'combo',  ref:'camRolls' },
+      { k:'name',         label:'카메라 이름',  t:'combo',  ref:'cameraModels' },
+      { k:'manufacturer', label:'카메라 기종',  t:'combo',  ref:'cameraManufacturers' },
+      { k:'detailModel',  label:'세부 기종',    t:'text' },
+      { k:'resolution',   label:'Resolution',  t:'combo',  ref:'cameraResolutions' },
+      { k:'aperture',     label:'Aperture',    t:'combo',  ref:'tStops' },
+      { k:'format',       label:'포맷',        t:'combo',  ref:'cameraFormats' },
+      { k:'sensorMode',   label:'센서 모드',    t:'combo',  ref:'sensorModes' },
+      { k:'lensSeries',   label:'카메라 렌즈',  t:'combo',  ref:'lenses' },
+      { k:'lensSet',      label:'렌즈군',      t:'textarea' },
+      { k:'notes',        label:'비고',        t:'textarea', full:true },
+    ],
     groups:[
       { title:'바디', fields:[
         { k:'photo', label:'사진', t:'photo', preset:'thumb' },
@@ -369,7 +389,7 @@ export const ENTITIES = {
       ]},
       { title:'렌즈', fields:[
         { k:'lensSeries', label:'렌즈 시리즈', t:'combo', ref:'lenses' },
-        { k:'lensSet', label:'렌즈 세트', t:'text' },
+        { k:'lensSet', label:'렌즈 세트', t:'textarea' },
         { k:'aperture', label:'조리개', t:'combo', ref:'tStops' },
       ]},
       { title:'메모', fields:[

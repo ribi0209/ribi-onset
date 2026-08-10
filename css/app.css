@@ -488,3 +488,30 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
 }
 .chip.link:hover{ background:var(--accent); color:#fff; }
 .backlink{ min-height:34px; align-items:center; }
+
+/* ---------- 목록형 편집 (카메라) ---------- */
+.inline-list{
+  display:flex; flex-direction:column; gap:0;
+  border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  background:var(--bg2); box-shadow:var(--shadow);
+}
+.inline-row{
+  display:grid; grid-template-columns:40px 190px 1fr 56px;
+  gap:14px; align-items:start; padding:14px 16px;
+}
+.inline-row + .inline-row{ border-top:1px solid var(--line); }
+.inline-row:hover{ background:var(--bg3); }
+.inline-no{ color:var(--dim); font-size:13px; font-weight:700; padding-top:6px; }
+.inline-thumb .photo-tile{ aspect-ratio:4/3; border-radius:8px; }
+.inline-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; min-width:0; }
+.inline-cell{ display:grid; grid-template-columns:96px 1fr; align-items:center; gap:10px; min-width:0; }
+.inline-cell.full{ grid-column:1 / -1; align-items:start; }
+.inline-cell > label{ font-size:12px; color:var(--dim); font-weight:600; text-align:right; }
+.inline-cell .inp{ width:100%; }
+.inp.ta.small{ min-height:34px; font-size:13px; padding:5px 8px; }
+.inline-del{ align-self:start; }
+@media (max-width:900px){
+  .inline-row{ grid-template-columns:32px 130px 1fr 48px; gap:10px; }
+  .inline-grid{ grid-template-columns:1fr; }
+  .inline-cell{ grid-template-columns:88px 1fr; }
+}

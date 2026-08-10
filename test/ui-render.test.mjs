@@ -285,8 +285,47 @@ console.log('== 에셋 개편 ==');
   ok(main.querySelectorAll('.backlink .chip.link').length===0, '연결 해제하면 사라짐');
 }
 
+console.log('== 카메라: 목록형 (상세 없음) ==');
+{
+  const { ENTITIES } = await import('../js/schema.js');
+  ok(ENTITIES.cameras.inline === true, 'cameras.inline = true');
+  ok(Array.isArray(ENTITIES.cameras.inlineFields) && ENTITIES.cameras.inlineFields.length >= 10,
+     `inlineFields ${ENTITIES.cameras.inlineFields.length}개`);
+
+  let routed = null;
+  await V.entityListView(main,'cameras',(p)=>{ routed = p; }); await wait(300);
+  ok(!main.querySelector('table.dtable'), '표가 아니라 목록형');
+  ok(!!main.querySelector('.inline-list'), '인라인 목록 렌더');
+  const cams = await DB.list('cameras');
+  const rowsN = main.querySelectorAll('.inline-row');
+  ok(rowsN.length===cams.length, `카메라 ${rowsN.length}행`);
+  ok(rowsN[0].querySelector('.inline-no').textContent==='1', 'NO 표시');
+  ok(!!rowsN[0].querySelector('.inline-thumb .photo-tile'), '행마다 썸네일');
+  const labels = Array.from(rowsN[0].querySelectorAll('.inline-cell > label')).map(l=>l.textContent);
+  ok(labels[0]==='Cam Roll' && labels[1]==='카메라 이름', `라벨 순서 ${labels.slice(0,4).join(' / ')}`);
+  ok(rowsN[0].querySelectorAll('.inline-cell .inp').length>=10, '행에서 바로 입력 가능');
+
+  // 행을 눌러도 상세로 가지 않는다
+  ev(rowsN[0]); await wait(120);
+  ok(routed===null, `행 클릭해도 상세 이동 없음 (${routed})`);
+
+  // 목록에서 바로 편집 → 저장
+  const inp = rowsN[0].querySelector('.inline-cell .inp');
+  inp.value = 'Z9'; ev(inp,'input'); await wait(800);
+  const after = (await DB.list('cameras')).find(c=>c.id===cams[0].id) ||
+                (await DB.list('cameras')).find(c=>c.camRoll==='Z9');
+  ok(!!(await DB.list('cameras')).some(c=>c.camRoll==='Z9'), `목록에서 편집 → 저장됨`);
+
+  // 추가
+  const before = cams.length;
+  const addBtn = Array.from(main.querySelectorAll('.page-head button')).find(b=>b.textContent.startsWith('+ '));
+  ev(addBtn); await wait(500);
+  ok((await DB.list('cameras')).length===before+1, '목록에서 바로 추가');
+  ok(main.querySelectorAll('.inline-row').length===before+1, '행이 즉시 늘어남');
+}
+
 console.log('== 나머지 엔티티 (리스트 + 상세) ==');
-for (const k of ['locations','assets','cameras','hdri']){
+for (const k of ['locations','assets','hdri']){
   await V.entityListView(main,k,go); await wait(200);
   ok(!!main.querySelector('.page-head h1'), `${k} 리스트 헤더: ${main.querySelector('.page-head h1').textContent}`);
   ok(!main.querySelector('.split'), `${k}: 분할 레이아웃 아님`);

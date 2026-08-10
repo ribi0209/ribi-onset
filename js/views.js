@@ -44,6 +44,7 @@ async function flushAll(){
 /** 리스트 → 클릭 → 상세 페이지 (좌우 분할 아님) */
 export async function entityListView(root, entKey, go){
   const cfg = ENTITIES[entKey];
+  if (cfg.inline) return entityInlineView(root, entKey);
   const S = st(entKey);
   clear(root);
 
@@ -187,6 +188,94 @@ export async function entityListView(root, entKey, go){
 
   buildFilters();
   root.appendChild(el('div', { class:'pane single list-page' }, [ head, filterBar, countEl, tableWrap ]));
+  await draw();
+}
+
+/* ===================== 엔티티 : 목록형 (상세 없음) ===================== */
+
+/**
+ * 상세 페이지 없이 목록에서 바로 편집한다 (카메라처럼 항목이 적고 비교가 중요한 것).
+ * 한 행 = 썸네일 + 라벨/입력 짝을 2열로 배치.
+ */
+export async function entityInlineView(root, entKey){
+  const cfg = ENTITIES[entKey];
+  clear(root);
+
+  const project = await DB.getProject();
+  let rows = await DB.list(cfg.store);
+  const navNo = String(NAV.findIndex(n => n.k === entKey) + 1).padStart(2,'0');
+  const listEl = el('div', { class:'inline-list' });
+
+  const head = el('header', { class:'page-head' }, [
+    el('div', { class:'grow' }, [
+      el('div', { class:'eyebrow', text:`${navNo} · ${cfg.label.toUpperCase()}` }),
+      el('h1', { text: cfg.title || cfg.label }),
+      cfg.desc ? el('p', { class:'dim', text: cfg.desc }) : null,
+    ]),
+    el('div', { class:'row gap wrap' }, [
+      el('button', { class:'btn ghost', text:'CSV', onclick: () => exportCSV(entKey, rows) }),
+      el('button', { class:'btn ghost', text:'PDF', onclick: () => exportPrint(entKey, rows) }),
+      el('button', { class:'btn primary', text:`+ ${cfg.labelKo} 추가`, onclick: async () => {
+        await makeRecord(entKey, cfg, project, rows);
+        rows = await DB.list(cfg.store);
+        await draw();
+      }}),
+    ])
+  ]);
+
+  function sortRows(list){
+    return list.slice().sort((a,b) =>
+      String(a.camRoll||'').localeCompare(String(b.camRoll||''), 'ko', { numeric:true })
+      || (a.createdAt||'').localeCompare(b.createdAt||''));
+  }
+
+  async function draw(){
+    clear(listEl);
+    const list = sortRows(rows);
+    if (!list.length){
+      listEl.appendChild(el('div', { class:'empty', text:`등록된 ${cfg.labelKo}이(가) 없습니다.` }));
+      return;
+    }
+    let i = 0;
+    for (const rec of list){ i++; listEl.appendChild(card(rec, i)); }
+  }
+
+  function card(rec, no){
+    const save = () => autosave(cfg.store, rec);
+    const grid = el('div', { class:'inline-grid' });
+
+    for (const f of (cfg.inlineFields || [])){
+      const cell = el('div', { class:'inline-cell' + (f.full ? ' full' : '') }, [
+        el('label', { text:f.label }),
+      ]);
+      if (f.t === 'textarea'){
+        const ta = el('textarea', { class:'inp ta small', rows:2 });
+        ta.value = rec[f.k] || '';
+        ta.addEventListener('input', () => { rec[f.k] = ta.value; save(); });
+        cell.appendChild(ta);
+      } else {
+        cell.appendChild(miniField(f, rec, save));
+      }
+      grid.appendChild(cell);
+    }
+
+    return el('article', { class:'inline-row' }, [
+      el('div', { class:'inline-no', text:String(no) }),
+      el('div', { class:'inline-thumb' }, [
+        photoTile(() => rec[cfg.thumbField], (v) => { rec[cfg.thumbField] = v; }, 'thumb', save)
+      ]),
+      grid,
+      el('button', { class:'btn tiny danger inline-del', text:'삭제', onclick: async () => {
+        const nm = cfg.titleFields.map(k=>rec[k]).filter(Boolean).join(' ') || rec.id;
+        if (!await confirmBox(`${cfg.labelKo} 삭제`, `${nm} 을(를) 삭제합니다.`, '삭제', true)) return;
+        await DB.del(cfg.store, rec.id);
+        rows = await DB.list(cfg.store);
+        await draw(); toast('삭제 완료', 'warn');
+      }}),
+    ]);
+  }
+
+  root.appendChild(el('div', { class:'pane single list-page' }, [ head, listEl ]));
   await draw();
 }
 

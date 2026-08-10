@@ -3,7 +3,7 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { NAV, ENTITY_ROUTES, BUILD } from './schema.js';
+import { NAV, ENTITY_ROUTES, ENTITIES, BUILD } from './schema.js';
 import { el, $, clear, toast, setRefsCache } from './ui.js';
 import { entityListView, entityDetailView, projectView, overviewView, settingsView, backupView } from './views.js';
 
@@ -28,6 +28,8 @@ async function render(){
   if (k === 'settings') return settingsView(main);
   if (k === 'backup')   return backupView(main, () => boot(true));
   if (ENTITY_ROUTES.includes(k)){
+    // inline 엔티티(카메라)는 상세 페이지가 없다 — id 가 붙어도 목록으로
+    if (ENTITIES[k] && ENTITIES[k].inline) return entityListView(main, k, go);
     return id ? entityDetailView(main, k, id, go) : entityListView(main, k, go);
   }
   return overviewView(main, go);
