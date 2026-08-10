@@ -480,3 +480,11 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
   .grid.fixed > .field{ grid-column:auto !important; grid-row:auto !important; }
   .grid.fixed > .field.full{ grid-column:1 / -1 !important; }
 }
+
+/* ---------- 역방향 연결 (읽기 전용) ---------- */
+.chip.link{
+  border:1px solid var(--accent); color:var(--accent); background:var(--accent2);
+  cursor:pointer; font:inherit; font-size:13px; padding:4px 11px; border-radius:20px;
+}
+.chip.link:hover{ background:var(--accent); color:#fff; }
+.backlink{ min-height:34px; align-items:center; }

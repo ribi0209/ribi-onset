@@ -30,7 +30,9 @@ await new Promise((res,rej)=>{
     t.objectStore('locations').put({ id:'LOC-1', shootLocation:'팔복사무실', setType:'Location',
       model3d:'None', seasonStart:'3월', seasonEnd:'5월', surveyPhotos:[null,null] });
     t.objectStore('locations').put({ id:'LOC-2', shootLocation:'조양 체육관', mainLocation:'인천', subLocation:'창고' });
-    t.objectStore('assets').put({ id:'AST-1', name:'말', linkedSceneIds:['PMT-20260801-101010-AAAA'] });
+    t.objectStore('assets').put({ id:'AST-1', name:'말', linkedSceneIds:['PMT-20260801-101010-AAAA'],
+      path:'/vol/assets/horse', memo:'구버전 메모', propMethod:'Photogrammetry', lidar:'LiDAR',
+      material:'피부', imagePhotos:[null,null], platePhotos:[null,null] });
     t.oncomplete = ()=>{ db.close(); res(); };
     t.onerror = ()=>rej(t.error);
   };
@@ -40,7 +42,7 @@ console.log('== v2 DB 준비 완료 (씬 3건, VFX 정보 2건) ==');
 
 const DB = await import('../js/db.js');
 const db = await DB.open();
-ok(db.version===4, `DB 버전 ${db.version} → 4`);
+ok(db.version===5, `DB 버전 ${db.version} → 5`);
 ok(db.objectStoreNames.contains('projects'), 'projects 스토어 생성');
 ok(db.objectStoreNames.contains('cuts'), 'cuts 스토어 생성');
 
@@ -86,8 +88,15 @@ const l2 = locs.find(l=>l.id==='LOC-2');
 ok(l2.mainLocation==='인천' && l2.subLocation==='창고', '이미 대장소가 있으면 덮어쓰지 않음');
 ok(!('shootLocation' in l2), 'LOC-2 도 촬영장소 제거');
 
+console.log('== v4 → v5 : 에셋-씬 연결을 씬 쪽으로 이관 ==');
 const asset = (await DB.list('assets'))[0];
-ok(asset.linkedSceneIds[0]==='PMT-20260801-101010-AAAA', '에셋-씬 연결 유지');
+const sceneA = (await DB.list('scenes')).find(s=>s.id==='PMT-20260801-101010-AAAA');
+ok(Array.isArray(sceneA.linkedAssetIds) && sceneA.linkedAssetIds.includes('AST-1'),
+   `씬에 연결 에셋 심어짐 (${JSON.stringify(sceneA.linkedAssetIds)})`);
+ok(!('linkedSceneIds' in asset), '에셋의 정방향 연결 필드 제거 (이제 역방향 표시)');
+for (const k of ['path','memo','propMethod','lidar','material','imagePhotos','platePhotos'])
+  ok(!(k in asset), `에셋 폐기 필드 제거: ${k}`);
+ok(asset.name==='말', '에셋 이름은 그대로');
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

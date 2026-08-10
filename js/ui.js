@@ -414,6 +414,38 @@ export function ocrReview(fields, labels, rawText, confidence){
   });
 }
 
+/* ---------------- 역방향 연결 (읽기 전용) ---------------- */
+
+/**
+ * 반대편 엔티티에서 이 레코드를 연결한 결과를 보여준다.
+ * 예) 씬에서 에셋을 고르면, 에셋 화면의 "연결 씬"에 자동으로 나타난다.
+ * 여기서는 편집하지 않는다 — 연결은 항상 한쪽(씬)에서만 관리해야 어긋나지 않는다.
+ * @param {object} f  { from:'scenes', via:'linkedAssetIds' }
+ */
+async function backlinkList(f, rec, ctx = {}){
+  const wrap = el('div', { class:'link-wrap backlink' });
+  const { ENTITIES } = await import('./schema.js');
+  const cfg = ENTITIES[f.from];
+  const rows = (await DB.list(f.from)).filter(r => {
+    const v = r[f.via];
+    return Array.isArray(v) ? v.includes(rec.id) : v === rec.id;
+  });
+
+  if (!rows.length){
+    wrap.appendChild(el('span', { class:'dim tiny',
+      text:`${cfg.labelKo}에서 이 ${'에셋'}을 연결하면 여기에 자동으로 표시됩니다.` }));
+    return wrap;
+  }
+  const labelFor = (r) => cfg.titleFields.map(k => r[k]).filter(Boolean).join(' / ') || r.id;
+  for (const r of rows){
+    wrap.appendChild(el('button', {
+      class:'chip link', title:'해당 ' + cfg.labelKo + '으로 이동',
+      onclick: () => ctx.go && ctx.go(`${f.from}/${r.id}`),
+    }, [ el('span', { text: labelFor(r) }) ]));
+  }
+  return wrap;
+}
+
 /* ---------------- 링크(다른 레코드 연결) 위젯 ---------------- */
 
 async function linkWidget(field, rec, onDirty){
@@ -534,9 +566,10 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         while (rec[f.k].length < n) rec[f.k].push(null);
         // 열 수를 사진 개수에 맞춰 고정한다. auto-fill 이면 화면폭에 따라
         // 마지막 줄에 한두 칸만 남아 어긋나 보인다.
+        const per = f.perRow || n;
         const grid = el('div', {
-          class:'photo-grid' + (n <= 8 ? ' fixed' : ''),
-          style: n <= 8 ? `--pcols:${n}` : null,
+          class:'photo-grid' + (per <= 8 ? ' fixed' : ''),
+          style: per <= 8 ? `--pcols:${per}` : null,
         });
         for (let i = 0; i < n; i++){
           grid.appendChild(photoTile(
@@ -548,6 +581,9 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
 
       } else if (f.t === 'link'){
         cell.appendChild(await linkWidget(f, rec, onDirty));
+
+      } else if (f.t === 'backlink'){
+        cell.appendChild(await backlinkList(f, rec, ctx));
 
       } else if (f.t === 'select'){
         const sel = el('select', { class:'inp' });

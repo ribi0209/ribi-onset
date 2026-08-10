@@ -13,9 +13,9 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 4;
+export const DB_VER  = 5;
 export const APP_ID  = 'Ribi Onset Management';
-export const APP_VER = 7;
+export const APP_VER = 8;
 
 /** 프로젝트에 종속되는 기록 스토어 */
 const RECORD_STORES = ['scenes','cuts','locations','cameras','assets','hdri'];
@@ -31,7 +31,11 @@ export function open(){
   return new Promise((res, rej) => {
     const req = indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded = (e) => upgrade(e.target.result, e.target.transaction, e.oldVersion);
-    req.onsuccess = () => { _db = req.result; res(_db); };
+    req.onsuccess = async () => {
+      _db = req.result;
+      try { await postMigrate(); } catch (e){ console.warn('postMigrate', e); }
+      res(_db);
+    };
     req.onerror   = () => rej(req.error);
   });
 }
@@ -68,6 +72,21 @@ function upgrade(db, t, oldVersion){
           if (Object.keys(LEGACY_FIELD).some(k => k in r)) os.put(normalizeLegacy(r));
       };
     }
+  }
+
+  /* v4 → v5 : 에셋에서 폐기한 필드 정리 (씬과의 연결 이관은 postMigrate 에서) */
+  if (oldVersion > 0 && oldVersion < 5 && db.objectStoreNames.contains('assets')){
+    const os = t.objectStore('assets');
+    os.getAll().onsuccess = (ev) => {
+      for (const a of (ev.target.result || [])){
+        let dirty = false;
+        for (const k of ['path','memo','propMethod','lidar','hdri','model3d','material',
+                         'imagePhotos','surveyPhotos','platePhotos']){
+          if (k in a){ delete a[k]; dirty = true; }
+        }
+        if (dirty) os.put(a);
+      }
+    };
   }
 
   /* v3 → v4 : 로케이션의 촬영장소를 대장소로 합치고, 폐기된 서베이 사진을 정리 */
@@ -135,6 +154,44 @@ function upgrade(db, t, oldVersion){
       }
     };
   }
+}
+
+/**
+ * 업그레이드 트랜잭션 밖에서 한 번만 도는 후처리.
+ * versionchange 트랜잭션 안에서 여러 스토어를 오가며 읽고 쓰면
+ * 요청 순서가 다른 마이그레이션 단계와 뒤엉켜 결과가 덮어써진다.
+ * 그래서 "다른 스토어를 참조해야 하는" 이관은 여기서 처리한다.
+ */
+let _postDone = false;
+async function postMigrate(){
+  if (_postDone) return;
+  _postDone = true;
+
+  const flag = await wrap(tx(['kv']).objectStore('kv').get('assetLinkMigrated'));
+  if (flag && flag.value) return;
+
+  // 에셋에 남아 있던 정방향 연결(linkedSceneIds)을 씬 쪽(linkedAssetIds)으로 옮긴다
+  const assets = await wrap(tx(['assets']).objectStore('assets').getAll());
+  const pend = [];
+  for (const a of assets){
+    if (Array.isArray(a.linkedSceneIds) && a.linkedSceneIds.length){
+      for (const sid of a.linkedSceneIds) pend.push([sid, a.id]);
+    }
+    if ('linkedSceneIds' in a){
+      delete a.linkedSceneIds;
+      await wrap(tx(['assets'],'readwrite').objectStore('assets').put(a));
+    }
+  }
+  for (const [sid, aid] of pend){
+    const s = await wrap(tx(['scenes']).objectStore('scenes').get(sid));
+    if (!s) continue;
+    if (!Array.isArray(s.linkedAssetIds)) s.linkedAssetIds = [];
+    if (!s.linkedAssetIds.includes(aid)){
+      s.linkedAssetIds.push(aid);
+      await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+    }
+  }
+  await wrap(tx(['kv'],'readwrite').objectStore('kv').put({ key:'assetLinkMigrated', value:true }));
 }
 
 /** 레거시 레코드 정규화 (폐기 필드 제거 + 필드명 이관) */

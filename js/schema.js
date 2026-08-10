@@ -18,9 +18,10 @@
  *   select    레퍼런스 목록에서만 선택
  *   seg       2~4개 선택지 세그먼트 버튼
  *   photo     이미지 1장 (탭하면 바로 카메라)
- *   photos    이미지 N장 (n 속성)
+ *   photos    이미지 N장 (n 속성, perRow 로 한 줄 개수 지정)
  *   link      다른 엔티티 레코드 다중 연결 (to 속성)
  *   sketch    S펜/손가락 필기 캔버스 → PNG 로 저장
+ *   backlink  반대편에서 연결한 결과를 읽기 전용으로 표시 (from / via 속성)
  *
  * 배치
  *   그룹에 cols:N 을 주면 N열 고정 격자가 되고, 필드의 span / rowSpan 으로
@@ -29,7 +30,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v13 · 2026-08-07';
+export const BUILD = 'v14 · 2026-08-07';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -227,6 +228,7 @@ export const ENTITIES = {
       ]},
       { title:'메모', fields:[
         { k:'extraNote', label:'추가 메모', t:'textarea', full:true },
+        { k:'linkedAssetIds', label:'연결 에셋', t:'link', to:'assets', full:true },
       ]},
     ],
   },
@@ -313,38 +315,30 @@ export const ENTITIES = {
 
   /* ============ ASSET ============ */
   assets: {
-    label:'Asset', labelKo:'에셋', title:'에셋 정보', desc:'캐릭터·프랍·차량·환경 등 3D 제작 대상과 취득 데이터를 관리합니다.',
+    label:'Asset', labelKo:'에셋', title:'에셋 정보', desc:'캐릭터·프랍·차량·환경 등 3D 제작 대상과 소스 사진을 관리합니다.',
     icon:'◇', store:'assets', idPrefix:'AST',
     titleFields:['name'], subtitleFields:['assetId','type'],
     thumbField:'thumbnail',
     filters:[
       { k:'type', ref:'assetTypes', label:'타입' },
-      { k:'model3d', ref:'modelOptions', label:'3D 모델' },
     ],
-    listCols:['assetId','name','type','hdri','model3d'],
-    csvCols:['id','assetId','name','type','hdri','model3d',
-             'description','memo','path','createdAt','updatedAt'],
+    listCols:['assetId','name','type','description'],
+    csvCols:['id','assetId','name','type','description','linkedScenes','createdAt','updatedAt'],
     groups:[
-      { title:'식별', fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
-        { k:'assetId', label:'에셋 ID', t:'text' },
-        { k:'name', label:'이름', t:'text' },
-        { k:'type', label:'타입', t:'select', ref:'assetTypes' },
-        { k:'path', label:'경로', t:'text' },
-      ]},
-      { title:'데이터 취득', fields:[
-        { k:'hdri',    label:'HDRI',    t:'select', ref:'hdriOptions' },
-        { k:'model3d', label:'3D 모델', t:'select', ref:'modelOptions' },
+      { title:'기본정보', cols:4, fields:[
+        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:2 },
+        { k:'assetId', label:'에셋 ID', t:'text', span:1 },
+        { k:'name',    label:'이름',     t:'text', span:1 },
+        { k:'type',    label:'타입',     t:'select', ref:'assetTypes', span:1 },
       ]},
       { title:'내용', fields:[
         { k:'description', label:'설명', t:'textarea', full:true },
-        { k:'memo', label:'메모', t:'textarea', full:true },
-        { k:'linkedSceneIds', label:'연결 씬', t:'link', to:'scenes', full:true },
+        // 씬에서 에셋을 연결하면 여기에 자동으로 쌓인다 (직접 편집하지 않음)
+        { k:'linkedSceneIds', label:'연결 씬', t:'backlink', from:'scenes', via:'linkedAssetIds', full:true },
+        { k:'sketch', label:'스케치 (S펜)', t:'sketch', full:true },
       ]},
-      { title:'사진', fields:[
-        { k:'imagePhotos',  label:'이미지',   t:'photos', n:2, full:true },
-        { k:'surveyPhotos', label:'서베이',   t:'photos', n:2, full:true },
-        { k:'platePhotos',  label:'플레이트', t:'photos', n:2, full:true },
+      { title:'소스 사진', fields:[
+        { k:'sourcePhotos', label:'소스', t:'photos', n:21, perRow:7, preset:'plate', full:true },
       ]},
     ],
   },

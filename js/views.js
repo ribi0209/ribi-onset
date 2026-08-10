@@ -68,7 +68,6 @@ export async function entityListView(root, entKey, go){
       entKey === 'scenes'
         ? el('button', { class:'btn ghost', text:'Breakdown', onclick: () => exportBreakdown(filtered()) }) : null,
       el('button', { class:'btn ghost', text:'PDF', onclick: () => exportPrint(entKey, filtered()) }),
-      el('button', { class:'btn', text:'📷 촬영 + 추가', onclick: () => addNew(true) }),
       el('button', { class:'btn primary', text:`+ ${cfg.labelKo} 추가`, onclick: () => addNew(false) }),
     ])
   ]);
@@ -181,8 +180,8 @@ export async function entityListView(root, entKey, go){
     }
   }
 
-  async function addNew(withCapture){
-    const rec = await makeRecord(entKey, cfg, project, rows, withCapture);
+  async function addNew(){
+    const rec = await makeRecord(entKey, cfg, project, rows);
     go(`${entKey}/${rec.id}`);
   }
 
@@ -192,7 +191,7 @@ export async function entityListView(root, entKey, go){
 }
 
 /** 새 레코드 생성 (리스트/상세 공용) */
-async function makeRecord(entKey, cfg, project, rows, withCapture){
+async function makeRecord(entKey, cfg, project, rows){
   const base = { projectId: project.id };
   for (const g of cfg.groups) for (const f of g.fields){
     base[f.k] = (f.t === 'photos') ? new Array(f.n||2).fill(null)
@@ -207,15 +206,6 @@ async function makeRecord(entKey, cfg, project, rows, withCapture){
   if (cfg.autoStamp){
     base[cfg.autoStamp.date] = nowDate();
     base[cfg.autoStamp.time] = nowTime();
-  }
-  if (withCapture){
-    const files = await pickFiles({ capture:true });
-    if (files.length){
-      const p = progress(); p.set('이미지 압축 중', 40);
-      try { base[cfg.thumbField] = await ingest(files[0], 'thumb'); }
-      catch(e){ toast('이미지 처리 실패: '+e.message, 'err'); }
-      finally { p.done(); }
-    }
   }
   await DB.put(cfg.store, base);
   return base;
@@ -274,7 +264,7 @@ export async function entityDetailView(root, entKey, id, go){
   ]);
 
   const form = await renderForm(rec, cfg.groups, entKey,
-    () => autosave(cfg.store, rec), { project });
+    () => autosave(cfg.store, rec), { project, go });
 
   const pane = el('div', { class:'pane single detail-page' }, [ head, form ]);
   root.appendChild(pane);

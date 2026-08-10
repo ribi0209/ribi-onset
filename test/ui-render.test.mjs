@@ -238,6 +238,53 @@ console.log('== 로케이션 개편 ==');
   ok(!ths.includes('3D 스캔') && !ths.includes('HDRI'), '목록에서 3D 스캔 / HDRI 제거');
 }
 
+console.log('== 촬영+추가 버튼 제거 ==');
+for (const k of ['scenes','locations','assets','cameras','hdri']){
+  await V.entityListView(main,k,()=>{}); await wait(180);
+  const btns = Array.from(main.querySelectorAll('.page-head button')).map(b=>b.textContent);
+  ok(!btns.some(t=>t.includes('촬영')), `${k}: 촬영+추가 없음 (${btns.join('/')})`);
+}
+
+console.log('== 에셋 개편 ==');
+{
+  const { ENTITIES } = await import('../js/schema.js');
+  const A = ENTITIES.assets;
+  const keys = A.groups.flatMap(g=>g.fields.map(f=>f.k));
+  for (const dead of ['path','memo','propMethod','lidar','hdri','model3d','material',
+                      'imagePhotos','surveyPhotos','platePhotos'])
+    ok(!keys.includes(dead), `제거됨: ${dead}`);
+  ok(!A.groups.some(g=>g.title==='데이터 취득'), '데이터 취득 그룹 제거');
+  const sk = A.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');
+  ok(!!sk, `S펜 추가 (${sk && sk.label})`);
+  const bl = keys.includes('linkedSceneIds') && A.groups.flatMap(g=>g.fields).find(f=>f.k==='linkedSceneIds');
+  ok(bl && bl.t==='backlink' && bl.from==='scenes' && bl.via==='linkedAssetIds',
+     `연결 씬 = 역방향 자동 (${bl && bl.t})`);
+  const sp = A.groups.find(g=>g.title==='소스 사진').fields[0];
+  ok(sp.k==='sourcePhotos' && sp.n===21 && sp.perRow===7, `소스 사진 ${sp.n}칸 / 한 줄 ${sp.perRow}개`);
+  // 씬 쪽에 연결 에셋 필드
+  const S2 = ENTITIES.scenes.groups.flatMap(g=>g.fields).find(f=>f.k==='linkedAssetIds');
+  ok(S2 && S2.t==='link' && S2.to==='assets', '씬에서 에셋을 연결한다 (link)');
+}
+{ // 실제 동작: 씬에서 에셋 연결 → 에셋 화면에 자동 표시
+  const scene = (await DB.list('scenes'))[0];
+  const asset = (await DB.list('assets'))[0];
+  scene.linkedAssetIds = [asset.id];
+  await DB.put('scenes', scene);
+
+  let jumped = null;
+  await V.entityDetailView(main,'assets',asset.id,(p)=>{ jumped = p; }); await wait(350);
+  const chips = main.querySelectorAll('.backlink .chip.link');
+  ok(chips.length===1, `에셋 화면에 연결 씬 ${chips.length}개 자동 표시`);
+  ev(chips[0]); await wait(80);
+  ok(jumped===`scenes/${scene.id}`, `칩 클릭 → 해당 씬으로 이동 (${jumped})`);
+  const grids = main.querySelectorAll('.photo-grid');
+  ok(grids.length===1 && grids[0].children.length===21, `소스 사진 ${grids[0].children.length}칸`);
+  ok(grids[0].getAttribute('style')==='--pcols:7', `한 줄 7개 (${grids[0].getAttribute('style')})`);
+  scene.linkedAssetIds = []; await DB.put('scenes', scene);
+  await V.entityDetailView(main,'assets',asset.id,()=>{}); await wait(300);
+  ok(main.querySelectorAll('.backlink .chip.link').length===0, '연결 해제하면 사라짐');
+}
+
 console.log('== 나머지 엔티티 (리스트 + 상세) ==');
 for (const k of ['locations','assets','cameras','hdri']){
   await V.entityListView(main,k,go); await wait(200);
