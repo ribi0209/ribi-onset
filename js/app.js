@@ -3,7 +3,7 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { NAV, ENTITY_ROUTES } from './schema.js';
+import { NAV, ENTITY_ROUTES, BUILD } from './schema.js';
 import { el, $, clear, toast, setRefsCache } from './ui.js';
 import { entityListView, entityDetailView, projectView, overviewView, settingsView, backupView } from './views.js';
 
@@ -85,7 +85,22 @@ async function boot(again = false){
     }
     window.addEventListener('hashchange', render);
 
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    if ('serviceWorker' in navigator){
+      // 새 버전이 활성화되면 한 번만 자동 새로고침한다.
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloaded) return;
+        reloaded = true;
+        location.reload();
+      });
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => {
+          reg.update();                                  // 접속할 때마다 갱신 확인
+          setInterval(() => reg.update(), 10 * 60 * 1000);
+        })
+        .catch(() => {});
+    }
+    console.info('Ribi Onset build', BUILD);
     DB.requestPersist().then(ok => { if (!ok) console.warn('persistent storage not granted'); });
     window.addEventListener('offline', () => toast('오프라인 — 로컬 저장은 정상 동작합니다', 'warn', 2500));
     window.RIBI = { DB, render, go };

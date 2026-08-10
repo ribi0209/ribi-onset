@@ -5,7 +5,7 @@
 
 import * as DB from './db.js';
 import {
-  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, fieldMap, labelOf
+  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD, fieldMap, labelOf
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -614,6 +614,19 @@ export async function settingsView(root){
   const wrap = el('div', { class:'pane single' }, [
     el('h2', { text:'Setting' }),
     el('p', { class:'dim tiny', text:'드롭다운 목록은 모든 프로젝트가 함께 씁니다. 현장에서 새 값을 입력하면 자동으로 여기에 추가됩니다.' }),
+
+    el('h3', { class:'sect', text:'앱 버전' }),
+    el('div', { class:'row gap wrap' }, [
+      el('code', { class:'dim', text: BUILD }),
+      el('button', { class:'btn tiny', text:'업데이트 확인', onclick: async () => {
+        if (!('serviceWorker' in navigator)){ toast('이 브라우저는 자동 갱신을 지원하지 않습니다', 'warn'); return; }
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg){ location.reload(); return; }
+        toast('확인 중…', 'ok', 1200);
+        await reg.update();
+        setTimeout(() => location.reload(), 800);
+      }}),
+    ]),
 
     el('h3', { class:'sect', text:'드롭다운 기본값' }),
     el('p', { class:'dim tiny', text:

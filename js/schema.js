@@ -28,6 +28,9 @@
  *   cols 가 없으면 기존처럼 폭에 맞춰 자동 배치된다.
  * ===================================================================== */
 
+/** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
+export const BUILD = 'v10 · 2026-08-07';
+
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
   episodes: Array.from({length:12},(_,i)=>'EP'+String(i+1).padStart(2,'0')),
