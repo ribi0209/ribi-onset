@@ -21,6 +21,11 @@
  *   photos    이미지 N장 (n 속성)
  *   link      다른 엔티티 레코드 다중 연결 (to 속성)
  *   sketch    S펜/손가락 필기 캔버스 → PNG 로 저장
+ *
+ * 배치
+ *   그룹에 cols:N 을 주면 N열 고정 격자가 되고, 필드의 span / rowSpan 으로
+ *   칸을 차지한다. 좁은 화면에서는 자동으로 흐름 배치로 되돌아간다.
+ *   cols 가 없으면 기존처럼 폭에 맞춰 자동 배치된다.
  * ===================================================================== */
 
 /* ---------- 기본 레퍼런스 ---------- */
@@ -274,14 +279,17 @@ export const ENTITIES = {
     csvCols:['id','mainLocation','subLocation','setId','setType','intExt',
              'scan3d','hdri','path','description','elements3d','usedCuts','createdAt','updatedAt'],
     groups:[
-      { title:'기본정보', fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
-        { k:'mainLocation', label:'대장소', t:'combo', ref:'locations' },
-        { k:'subLocation',  label:'소장소', t:'text' },
-        { k:'setId',        label:'SET ID', t:'text' },
-        { k:'setType', label:'세트 타입', t:'select', ref:'setTypes' },
-        { k:'intExt',  label:'INT / EXT', t:'select', ref:'intExt' },
-        { k:'path',    label:'주소', t:'text', full:true },
+      /* cols/span 으로 줄바꿈을 고정한다 (자동 흐름이면 화면폭 따라 열이 흐트러짐)
+         1행: 대장소 · 소장소 · SET ID   2행: 세트 타입 · INT/EXT   3행: 주소
+         썸네일은 왼쪽에서 3행을 관통 */
+      { title:'기본정보', cols:6, fields:[
+        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:3 },
+        { k:'mainLocation', label:'대장소', t:'combo', ref:'locations', span:2 },
+        { k:'subLocation',  label:'소장소', t:'text', span:2 },
+        { k:'setId',        label:'SET ID', t:'text', span:1 },
+        { k:'setType', label:'세트 타입', t:'select', ref:'setTypes', span:2 },
+        { k:'intExt',  label:'INT / EXT', t:'select', ref:'intExt', span:2 },
+        { k:'path',    label:'주소', t:'text', span:5 },
       ]},
       { title:'데이터 취득', fields:[
         { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions' },

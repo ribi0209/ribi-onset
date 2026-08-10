@@ -449,3 +449,16 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
   touch-action:none;              /* 그리는 동안 스크롤/줌 방지 */
   cursor:crosshair;
 }
+
+/* ---------- 고정 열 격자 (schema 의 cols / span) ---------- */
+.grid.fixed{ grid-template-columns:repeat(var(--cols,4), minmax(0,1fr)); align-items:start; }
+.grid.fixed > .field.full{ grid-column:1 / -1; }
+/* 썸네일이 여러 행을 관통할 때 높이가 늘어지지 않게 */
+.grid.fixed > .field > .photo-tile{ max-height:220px; }
+
+/* 좁은 화면에서는 고정 격자를 풀고 흐름 배치로 (인라인 span 을 덮어써야 하므로 !important) */
+@media (max-width:1080px){
+  .grid.fixed{ grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
+  .grid.fixed > .field{ grid-column:auto !important; grid-row:auto !important; }
+  .grid.fixed > .field.full{ grid-column:1 / -1 !important; }
+}

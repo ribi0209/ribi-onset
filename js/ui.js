@@ -461,6 +461,12 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
       // when 이 있으면 프로젝트 상태에 따라 필드를 감춘다 (예: 에피소드는 드라마만)
       if (typeof f.when === 'function' && !f.when(ctx.project || {})) continue;
       const cell = el('div', { class:'field' + (f.full ? ' full' : '') });
+      if (g.cols){
+        const sp = [];
+        if (f.span)    sp.push(`grid-column:span ${f.span}`);
+        if (f.rowSpan) sp.push(`grid-row:span ${f.rowSpan}`);
+        if (sp.length) cell.setAttribute('style', sp.join(';'));
+      }
       cell.appendChild(el('label', { text: f.label }));
 
       if (f.t === 'photo'){
@@ -545,9 +551,13 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
       }
       gridChildren.push(cell);
     }
+    const grid = el('div', {
+      class: 'grid' + (g.cols ? ' fixed' : ''),
+      style: g.cols ? `--cols:${g.cols}` : null,
+    }, gridChildren);
     root.appendChild(el('section', { class:'fgroup' }, [
       el('h4', { text: g.title }),
-      el('div', { class:'grid' }, gridChildren)
+      grid
     ]));
   }
   return root;
