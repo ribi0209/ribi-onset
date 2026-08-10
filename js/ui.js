@@ -308,13 +308,16 @@ async function linkWidget(field, rec, onDirty){
  * @param {Array}  groups     schema groups
  * @param {string} entKey     엔티티 키 (콤보 신규값 레퍼런스 편입용)
  * @param {Function} onDirty
+ * @param {object} ctx        { project } — 조건부 필드(when) 판정용
  */
-export async function renderForm(rec, groups, entKey, onDirty){
+export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
   const root = el('div', { class:'form' });
 
   for (const g of groups){
     const gridChildren = [];
     for (const f of g.fields){
+      // when 이 있으면 프로젝트 상태에 따라 필드를 감춘다 (예: 에피소드는 드라마만)
+      if (typeof f.when === 'function' && !f.when(ctx.project || {})) continue;
       const cell = el('div', { class:'field' + (f.full ? ' full' : '') });
       cell.appendChild(el('label', { text: f.label }));
 

@@ -5,7 +5,7 @@
 
 import * as DB from './db.js';
 import {
-  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, labelOf
+  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, labelOf
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -50,6 +50,7 @@ export async function entityView(root, entKey){
   const editPane = el('section', { class:'pane edit-pane' });
   root.appendChild(el('div', { class:'split' }, [listPane, editPane]));
 
+  const project = await DB.getProject();
   let rows = await DB.list(cfg.store);
   let cutIndex = entKey === 'scenes' ? await cutsBySceneMap() : null;
 
@@ -68,6 +69,7 @@ export async function entityView(root, entKey){
   function buildFilters(){
     clear(filterBar);
     for (const f of (cfg.filters || [])){
+      if (typeof f.when === 'function' && !f.when(project)) continue;
       const sel = el('select', { class:'inp mini' });
       sel.appendChild(el('option', { value:'', text:f.label }));
       const vals = Array.from(new Set([...(refList(f.ref)||[]), ...rows.map(r => r[f.k]).filter(Boolean)]));
@@ -188,8 +190,6 @@ export async function entityView(root, entKey){
       base[cfg.autoStamp.date] = nowDate();
       base[cfg.autoStamp.time] = nowTime();
     }
-    if (entKey === 'scenes') base.status = base.status || refList('statuses')[0] || '';
-
     if (withCapture){
       const files = await pickFiles({ capture:true });
       if (files.length){
@@ -260,7 +260,7 @@ export async function entityView(root, entKey){
     ]);
 
     const form = await renderForm(rec, cfg.groups, entKey,
-      () => autosave(cfg.store, rec, refreshRow));
+      () => autosave(cfg.store, rec, refreshRow), { project });
 
     editPane.append(head, form);
 
@@ -332,7 +332,6 @@ async function cutsSection(scene, onChange){
       id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
       cutNo: String(cuts.length + 1),
       vfxType: last ? last.vfxType : '', workElement:'',
-      status: last ? last.status : (refList('statuses')[0] || ''),
       vendor: last ? last.vendor : '',
       vfxShotId:'', shotNote:'', plateNote:'',
       thumbnail:null, photos:[null,null,null], takes:[],
@@ -366,7 +365,7 @@ async function cutsSection(scene, onChange){
       el('span', { class:'cut-no', text: 'C' + (cut.cutNo || '?') }),
       el('span', { class:'tag t-vfxType', text: cut.vfxType || '타입 미정' }),
       cut.workElement ? el('span', { class:'tag', text: cut.workElement }) : null,
-      el('span', { class:'tag t-status', text: cut.status || '' }),
+      cut.vendor ? el('span', { class:'tag', text: cut.vendor }) : null,
       el('span', { class:'dim tiny', text: nTakes ? `테이크 ${nTakes} (OK ${nOk})` : '테이크 없음' }),
       el('span', { class:'grow' }),
       el('button', { class:'btn tiny danger', text:'삭제', onclick: async (e) => {
@@ -540,13 +539,12 @@ export async function overviewView(root, go){
   };
   const byType   = by(c => c.vfxType || '미분류');
   const byEp     = by(c => (sceneById[c.sceneId]||{}).episode);
-  const byStatus = by(c => c.status || '미지정');
-  const byVendor = by(c => c.vendor);
+  const byVendor = by(c => c.vendor || '미배정');
   const byLoc    = by(c => (sceneById[c.sceneId]||{}).location);
   const byElem   = by(c => c.workElement);
+  const byTod    = by(c => (sceneById[c.sceneId]||{}).tod);
 
-  const done = byStatus['완료'] || 0;
-  const pct = cuts.length ? Math.round(done / cuts.length * 100) : 0;
+  const isDrama = p.type === '드라마';
 
   const posterURL = p.poster && p.poster.mid ? await DB.mediaURL(p.poster.mid) : null;
 
@@ -571,10 +569,8 @@ export async function overviewView(root, go){
         el('div', { class:'dim', text:[p.type, p.season, p.productionCompany, p.distributor].filter(Boolean).join(' · ') }),
         el('div', { class:'dim tiny', text:`크랭크인 ${p.crankIn||'—'} · 크랭크업 ${p.crankUp||'—'} · 납품 ${p.deliveryDate||'—'}` }),
         el('div', { class:'dim tiny', text:`딜리버리 ${[p.deliveryResolution,p.deliveryFps&&p.deliveryFps+'fps',p.deliveryCodec,p.deliveryColorSpace].filter(Boolean).join(' / ')||'—'}` }),
-        el('div', { class:'progress-wrap' }, [
-          el('div', { class:'progress' }, [ el('i', { style:`width:${pct}%` }) ]),
-          el('span', { class:'dim tiny', text:`완료 ${done} / ${cuts.length} 컷 (${pct}%)` })
-        ])
+        el('div', { class:'dim tiny', text:
+           `씬 ${scenes.length} · 컷 ${cuts.length} · 테이크 ${takes} (OK ${okTakes})` })
       ])
     ]),
 
@@ -589,11 +585,11 @@ export async function overviewView(root, go){
 
     el('div', { class:'dash-grid' }, [
       el('div', { class:'card wide' }, [ el('h4',{text:'작업 타입별 컷 수'}), bars(byType,'v') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'에피소드별 컷 수'}), bars(byEp,'e') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'상태별'}), bars(byStatus,'s') ]),
+      isDrama ? el('div', { class:'card' }, [ el('h4',{text:'에피소드별 컷 수'}), bars(byEp,'e') ]) : null,
       el('div', { class:'card' }, [ el('h4',{text:'벤더별'}), bars(byVendor,'s') ]),
       el('div', { class:'card' }, [ el('h4',{text:'로케이션별'}), bars(byLoc,'e', 10) ]),
       el('div', { class:'card' }, [ el('h4',{text:'작업 요소 TOP 10'}), bars(byElem,'v', 10) ]),
+      el('div', { class:'card' }, [ el('h4',{text:'시간대별 컷 수'}), bars(byTod,'e') ]),
     ]),
 
     el('div', { class:'row gap wrap' }, [
@@ -611,6 +607,31 @@ export async function settingsView(root){
   const wrap = el('div', { class:'pane single' }, [
     el('h2', { text:'Setting' }),
     el('p', { class:'dim tiny', text:'드롭다운 목록은 모든 프로젝트가 함께 씁니다. 현장에서 새 값을 입력하면 자동으로 여기에 추가됩니다.' }),
+
+    el('h3', { class:'sect', text:'드롭다운 기본값' }),
+    el('p', { class:'dim tiny', text:
+      '한 번이라도 목록을 수정하면 그 기기에 저장된 목록이 우선합니다. 앱이 업데이트되어 기본 목록이 바뀌어도 저장된 쪽은 그대로예요. 아래 버튼으로 최신 기본값을 가져올 수 있습니다.' }),
+    el('div', { class:'row gap wrap' }, [
+      el('button', { class:'btn', text:'없는 기본 항목만 채우기', onclick: async () => {
+        const cur = await DB.getRefs();
+        let added = 0;
+        for (const [k, list] of Object.entries(DEFAULT_REFS)){
+          if (!cur[k]){ cur[k] = list.slice(); added += list.length; continue; }
+          for (const item of list) if (!cur[k].includes(item)){ cur[k].push(item); added++; }
+        }
+        await DB.setRefs(cur); setRefsCache(await DB.getRefs());
+        toast(added ? `${added}개 항목 추가됨` : '추가할 항목 없음', added ? 'ok' : 'warn');
+        settingsView(root);
+      }}),
+      el('button', { class:'btn danger', text:'기본값으로 완전 초기화', onclick: async () => {
+        if (!await confirmBox('드롭다운 초기화',
+          '직접 추가하거나 지운 항목이 모두 사라지고 기본 목록으로 돌아갑니다. 이미 기록한 씬·컷 데이터는 영향받지 않습니다.', '초기화', true)) return;
+        await DB.setRefs(JSON.parse(JSON.stringify(DEFAULT_REFS)));
+        setRefsCache(await DB.getRefs());
+        toast('기본값으로 초기화됨');
+        settingsView(root);
+      }}),
+    ]),
 
     el('h3', { class:'sect', text:'모니터 OCR' }),
     el('p', { class:'dim tiny', text:

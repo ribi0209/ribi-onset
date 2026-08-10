@@ -32,9 +32,10 @@ const ev = (n,t='click')=>n.dispatchEvent(new w.Event(t,{bubbles:true}));
 console.log('== Overview ==');
 await V.overviewView(main, ()=>{}); await wait(150);
 ok(main.querySelectorAll('.stat').length===6, `스탯 6개 (${main.querySelectorAll('.stat').length})`);
-ok(main.querySelectorAll('.card').length===6, `집계 카드 6개 (${main.querySelectorAll('.card').length})`);
+ok(main.querySelectorAll('.card').length>=5, `집계 카드 ${main.querySelectorAll('.card').length}개`);
+ok(!main.textContent.includes('상태별'), 'Overview 에서 상태별 집계 제거');
+ok(!main.querySelector('.progress'), '완료 진행률 바 제거');
 ok(main.textContent.includes('작업 타입별 컷 수'), 'VFX 타입 집계 표시');
-ok(!!main.querySelector('.progress'), '진행률 바');
 ok(main.textContent.includes('Cut (VFX 물량)'), '컷 물량 카운터');
 
 console.log('== Project (멀티) ==');
@@ -85,13 +86,64 @@ ok(main.querySelectorAll('.take-row').length===3, '테이크 표 = 헤더1 + 행
 const monTiles = main.querySelectorAll('.tk-mon .photo-tile');
 ok(monTiles.length===2, '테이크마다 모니터 사진 타일');
 
+console.log('== 새 기본값 / 조건부 필드 ==');
+{
+  // 코드에 선언된 기본값 자체를 검사한다
+  const { DEFAULT_REFS } = await import('../js/schema.js');
+  const D = DEFAULT_REFS;
+  ok(D.episodes.length===12 && D.episodes[11]==='EP12', `에피소드 EP01~EP12 (${D.episodes.length}개)`);
+  ok(JSON.stringify(D.scenes)===JSON.stringify(['1-1','2-1']), `씬 ${JSON.stringify(D.scenes)}`);
+  ok(JSON.stringify(D.units)===JSON.stringify(['A','B','C']), `유닛 ${JSON.stringify(D.units)}`);
+  ok(D.tod.includes('SUNRISE') && D.tod.includes('SUNSET'), `시간대 ${D.tod.join(',')}`);
+  ok(D.vfxTypes.includes('PREP'), `작업 타입 ${D.vfxTypes.join(',')}`);
+  ok(JSON.stringify(D.vendors)===JSON.stringify(['WSWG','HI','4D','미정']), `벤더 ${JSON.stringify(D.vendors)}`);
+  ok(JSON.stringify(D.assetTypes)===JSON.stringify(['캐릭터','프랍','차량','환경']), `에셋 타입 ${JSON.stringify(D.assetTypes)}`);
+  ok(D.hdriCameras.includes('RICOH THETA'), 'HDRI 카메라에 RICOH THETA');
+  for (const k of ['statuses','taskStates','propMethods','lidarOptions','assetMaterials','seasons'])
+    ok(!(k in D), `폐기 목록 ${k} 없음`);
+}
+{
+  // 구 백업을 가져오면 저장된 목록이 기본값을 가린다 (알려진 동작) → 복구 버튼으로 해소되는지
+  const before = await DB.getRefs();
+  ok(before.episodes.length === 20, `구 백업 가져오기 직후에는 저장된 목록이 우선 (에피소드 ${before.episodes.length}개)`);
+
+  await V.settingsView(main); await wait(150);
+  const fill = Array.from(main.querySelectorAll('button')).find(b=>b.textContent==='없는 기본 항목만 채우기');
+  ev(fill); await wait(400);
+  const filled = await DB.getRefs();
+  ok(filled.tod.includes('SUNRISE') && filled.tod.includes('SUNSET'), '채우기 → SUNRISE/SUNSET 추가됨');
+  ok(filled.vendors.includes('HI') && filled.vendors.includes('4D'), '채우기 → 새 벤더 추가됨');
+  ok(filled.vendors.includes('DEXTER'), '채우기는 기존 항목을 지우지 않는다');
+  ok(filled.hdriCameras.includes('RICOH THETA'), '채우기 → RICOH THETA 추가됨');
+
+  await DB.setRefs(JSON.parse(JSON.stringify((await import('../js/schema.js')).DEFAULT_REFS)));
+  UI.setRefsCache(await DB.getRefs());
+  const reset = await DB.getRefs();
+  ok(reset.episodes.length===12 && !reset.vendors.includes('DEXTER'), '완전 초기화 → 기본값만 남음');
+}
+{ // 영화로 바꾸면 에피소드 입력란이 사라진다
+  const p = await DB.getProject(); p.type='드라마'; await DB.setProject(p);
+  await V.entityView(main,'scenes'); await wait(200);
+  ev(main.querySelector('.reclist .rec')); await wait(300);
+  ok(!!main.querySelector('.edit-pane input[list="dl-episodes"]'), '드라마 → 에피소드 입력란 있음');
+  ok(!main.textContent.includes('상태'), '씬 폼에서 상태 제거');
+  const p2 = await DB.getProject(); p2.type='영화'; await DB.setProject(p2);
+  await V.entityView(main,'scenes'); await wait(200);
+  ev(main.querySelector('.reclist .rec')); await wait(300);
+  ok(!main.querySelector('.edit-pane input[list="dl-episodes"]'), '영화 → 에피소드 입력란 숨김');
+  const p3 = await DB.getProject(); p3.type='드라마'; await DB.setProject(p3);
+}
+
 console.log('== 나머지 화면 ==');
 for (const k of ['locations','assets','cameras','hdri']){
   await V.entityView(main,k); await wait(150);
   ok(!!main.querySelector('.split'), `${k} 렌더`);
 }
 await V.settingsView(main); await wait(150);
-ok(main.querySelectorAll('.ref-card').length>=45, `Setting 레퍼런스 카드 ${main.querySelectorAll('.ref-card').length}개`);
+ok(main.querySelectorAll('.ref-card').length>=40, `Setting 레퍼런스 카드 ${main.querySelectorAll('.ref-card').length}개`);
+ok(main.textContent.includes('드롭다운 기본값'), 'Setting 에 기본값 복구 섹션');
+const fillBtn = Array.from(main.querySelectorAll('button')).find(b=>b.textContent==='없는 기본 항목만 채우기');
+ok(!!fillBtn, '없는 기본 항목만 채우기 버튼');
 await V.backupView(main, ()=>{}); await wait(150);
 ok(main.textContent.includes('전체 프로젝트'), 'Backup 화면');
 
@@ -102,6 +154,7 @@ w.HTMLAnchorElement.prototype.click=function(){};
 await E.exportCSV('scenes', await DB.list('scenes')); await wait(200);
 const csv = await blob.text();
 ok(csv.includes('컷 번호') && csv.includes('OK 테이크'), 'Scene CSV 가 컷 단위로 펼쳐짐');
+ok(!csv.split('\r\n')[0].includes('상태'), 'CSV 헤더에서 상태 열 제거');
 ok(csv.split('\r\n').length-1 === (await DB.list('cuts')).length, `CSV 행 = 컷 수 ${(await DB.list('cuts')).length}`);
 globalThis.URL.createObjectURL=origC;
 await E.exportBreakdown(await DB.list('scenes')); await wait(500);

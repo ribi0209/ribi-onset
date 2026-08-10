@@ -61,7 +61,8 @@ ok(cuts.length===2, `VFX 정보가 있던 씬 2건만 컷 생성 (${cuts.length}
 const a = cuts.find(c=>c.sceneId==='PMT-20260801-101010-AAAA');
 ok(!!a, '컷이 원래 씬에 연결됨');
 ok(a.vfxType==='2D', `vfxA 'WIRE REMOVAL' → vfxType '${a.vfxType}' (통계 축 정규화)`);
-ok(a.workElement==='wire' && a.vendor==='WSWG' && a.status==='기록 중', '작업요소/벤더/상태 이관');
+ok(a.workElement==='wire' && a.vendor==='WSWG', '작업요소/벤더 이관');
+ok(!('status' in a), '폐기된 상태 필드는 컷에 만들지 않음');
 ok(a.vfxShotId==='PMT_EP01_S28_C01', 'filename → VFX 샷 ID 이관');
 ok(Array.isArray(a.takes) && a.takes.length===0, 'takes 배열 초기화');
 const b = cuts.find(c=>c.sceneId==='PMT-20260801-101011-BBBB');

@@ -24,27 +24,24 @@
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
-  episodes: Array.from({length:20},(_,i)=>'EP'+String(i+1).padStart(2,'0')),
-  scenes: ['1-1','1-2','1-3','2-8','2-9','3-1','3-2'],
+  episodes: Array.from({length:12},(_,i)=>'EP'+String(i+1).padStart(2,'0')),
+  scenes: ['1-1','2-1'],
   cutNos: ['1','2','3','4','5','6','7','8','A','B','C'],
-  units: ['A','B','2nd','추가'],
+  units: ['A','B','C'],
   intExt: ['INT','EXT','INT/EXT'],
-  tod: ['DAY','NIGHT','DAWN','DUSK'],
+  tod: ['DAY','NIGHT','DAWN','DUSK','SUNRISE','SUNSET'],
 
   /* VFX 통계 축 — Overview 집계는 이 값으로만 센다 */
-  vfxTypes: ['2D','3D','AI','COMP','MATTE PAINT'],
+  vfxTypes: ['2D','3D','AI','COMP','MATTE PAINT','PREP'],
   workElements: ['wire removal','clean up','green screen','set extension','crowd',
                  'muzzle flash','blood','monitor','sky replace','face fix','creature',
                  'vehicle','environment','beauty','2D retouch'],
-  statuses: ['기록 중','확인 필요','완료','보류'],
-  vendors: ['WSWG','DEXTER','미정','기타'],
+  vendors: ['WSWG','HI','4D','미정'],
   takeStates: ['OK','KEEP','NG'],
 
   projectTypes: ['영화','드라마'],
   setTypes: ['Location','Set','Partial Set','Studio','Virtual Production'],
   scanOptions: ['미정','불필요','LiDAR','Photogrammetry','Hand 3D scan','촬영완료'],
-  taskStates: ['미정','불필요','필요','촬영완료','제작완료'],
-  seasons: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
 
   cameraManufacturers: ['ARRI','SONY','RED','BLACKMAGIC','CANON'],
   cameraModels: ['ARRI ALEXA 35','ARRI ALEXA Mini LF','ARRI ALEXA Mini','Sony VENICE 2','RED V-RAPTOR'],
@@ -62,12 +59,9 @@ export const DEFAULT_REFS = {
   codecs: ['OpenEXR ZIP','OpenEXR DWAA','ProRes 4444 XQ','ProRes 422 HQ','DNxHR HQX','H.264'],
   containers: ['EXR Sequence','MOV','MXF','DPX Sequence','TIFF Sequence'],
 
-  assetTypes: ['캐릭터','프랍','세트','차량','무기','의상','식생','기타'],
-  propMethods: ['None','Photo Reference','Turntable','Photogrammetry','Hand Scan'],
-  lidarOptions: ['None','Hand 3D scan','LiDAR','Photogrammetry'],
+  assetTypes: ['캐릭터','프랍','차량','환경'],
   hdriOptions: ['None','필요','촬영완료'],
   modelOptions: ['None','제작 필요','기존 모델','제작완료'],
-  assetMaterials: ['금속','목재','유리','플라스틱','고무','천','피부','복합 재질'],
 
   locations: [],
   focalLengths: ['18mm','21mm','24mm','27mm','32mm','35mm','40mm','50mm','65mm','75mm','85mm','100mm','135mm'],
@@ -77,7 +71,7 @@ export const DEFAULT_REFS = {
   whiteBalance: ['3200K','4300K','5600K','6500K','Custom'],
   ndFilters: ['-','ND0.3','ND0.6','ND0.9','ND1.2','ND1.5','ND1.8','ND2.1'],
 
-  hdriCameras: ['Canon EOS R5','Sony α7R V','Nikon Z8','Insta360 ONE RS 1-Inch'],
+  hdriCameras: ['Canon EOS R5','Sony α7R V','Nikon Z8','Insta360 ONE RS 1-Inch','RICOH THETA'],
   hdriLenses: ['8mm Fisheye','12mm Fisheye','15mm Fisheye','14mm Rectilinear'],
   hdriBrackets: ['-4 / 0 / +4 EV','-6 / -3 / 0 / +3 / +6 EV','-8 ~ +8 EV'],
   hdriSteps: ['1 EV','2 EV','3 EV','4 EV'],
@@ -93,20 +87,19 @@ export const DEFAULT_REFS = {
 /* Setting 탭에 노출할 그룹 */
 export const REF_GROUPS = [
   { title:'Scene / Cut', keys:{
-      episodes:'에피소드', scenes:'씬', cutNos:'컷 번호', units:'유닛',
-      intExt:'INT/EXT', tod:'시간대', statuses:'상태', takeStates:'테이크 판정' } },
+      episodes:'에피소드 (드라마)', scenes:'씬', cutNos:'컷 번호', units:'유닛',
+      intExt:'INT/EXT', tod:'시간대', takeStates:'테이크 판정' } },
   { title:'VFX', keys:{
-      vfxTypes:'작업 타입 (통계 축)', workElements:'작업 요소', vendors:'벤더', taskStates:'작업 상태' } },
+      vfxTypes:'작업 타입 (통계 축)', workElements:'작업 요소', vendors:'벤더' } },
   { title:'Location', keys:{
-      locations:'로케이션', setTypes:'세트 타입', scanOptions:'3D 스캔',
-      hdriOptions:'HDRI', modelOptions:'3D 모델', seasons:'시즌' } },
+      locations:'로케이션', setTypes:'세트 타입', scanOptions:'3D 스캔', hdriOptions:'HDRI' } },
   { title:'Camera', keys:{
       cameraManufacturers:'제조사', cameraModels:'모델', camRolls:'캠 롤',
       cameraResolutions:'해상도', cameraFormats:'포맷', sensorModes:'센서 모드',
       lenses:'렌즈 시리즈', focalLengths:'초점거리', tStops:'T-Stop',
       isoEi:'ISO/EI', shutters:'셔터', whiteBalance:'화이트밸런스', ndFilters:'ND' } },
   { title:'Asset', keys:{
-      assetTypes:'에셋 타입', propMethods:'프랍 방식', lidarOptions:'LiDAR', assetMaterials:'재질' } },
+      assetTypes:'에셋 타입', modelOptions:'3D 모델' } },
   { title:'HDRI / Light', keys:{
       hdriCameras:'HDRI 카메라', hdriLenses:'HDRI 렌즈', hdriBrackets:'브라케팅',
       hdriSteps:'EV 스텝', hdriDirections:'촬영 방향', hdriCharts:'차트',
@@ -189,27 +182,25 @@ export const ENTITIES = {
     titleFields:['episode','scene'],
     subtitleFields:['location','subLocation'],
     thumbField:'thumbnail',
-    inherit:['episode','unit','intExt','tod','location','subLocation','status'],
+    inherit:['episode','unit','intExt','tod','location','subLocation'],
     autoStamp:{ date:'shootDate', time:'shootTime' },
     filters:[
-      { k:'episode', ref:'episodes', label:'EP' },
+      { k:'episode', ref:'episodes', label:'EP', when:(p)=>p.type === '드라마' },
       { k:'unit',    ref:'units',    label:'유닛' },
       { k:'intExt',  ref:'intExt',   label:'INT/EXT' },
       { k:'tod',     ref:'tod',      label:'시간대' },
-      { k:'status',  ref:'statuses', label:'상태' },
     ],
-    listCols:['episode','scene','intExt','tod','location','status'],
+    listCols:['episode','scene','intExt','tod','location'],
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
-             'location','subLocation','script','shotNote','status','extraNote','createdAt','updatedAt'],
+             'location','subLocation','script','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
       { title:'식별', fields:[
         { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
-        { k:'episode', label:'에피소드', t:'combo', ref:'episodes' },
+        { k:'episode', label:'에피소드', t:'combo', ref:'episodes', when:(p)=>p.type === '드라마' },
         { k:'scene',   label:'씬',       t:'combo', ref:'scenes' },
         { k:'unit',    label:'유닛',     t:'combo', ref:'units' },
         { k:'shootDate', label:'촬영일', t:'date' },
         { k:'shootTime', label:'촬영시각', t:'time' },
-        { k:'status',  label:'상태',     t:'select', ref:'statuses' },
       ]},
       { title:'공간', fields:[
         { k:'intExt', label:'INT/EXT', t:'select', ref:'intExt' },
@@ -236,15 +227,14 @@ export const ENTITIES = {
     parent:'scenes', parentKey:'sceneId',
     titleFields:['cutNo'], subtitleFields:['vfxType','workElement'],
     thumbField:'thumbnail',
-    inherit:['vfxType','vendor','status'],
+    inherit:['vfxType','vendor'],
     filters:[
       { k:'vfxType', ref:'vfxTypes', label:'타입' },
-      { k:'status',  ref:'statuses', label:'상태' },
       { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
-    listCols:['cutNo','vfxType','workElement','status','vendor'],
+    listCols:['cutNo','vfxType','workElement','vendor'],
     csvCols:['id','sceneId','episode','scene','cutNo','vfxShotId','vfxType','workElement',
-             'status','vendor','takeCount','okTakes','shotNote','plateNote','createdAt','updatedAt'],
+             'vendor','takeCount','okTakes','shotNote','plateNote','createdAt','updatedAt'],
     groups:[
       { title:'식별', fields:[
         { k:'thumbnail', label:'컷 이미지', t:'photo', preset:'thumb' },
@@ -254,7 +244,6 @@ export const ENTITIES = {
       { title:'VFX', fields:[
         { k:'vfxType',     label:'작업 타입', t:'select', ref:'vfxTypes' },
         { k:'workElement', label:'작업 요소', t:'combo',  ref:'workElements' },
-        { k:'status',      label:'상태',     t:'select', ref:'statuses' },
         { k:'vendor',      label:'벤더',     t:'combo',  ref:'vendors' },
       ]},
       { title:'노트', fields:[
@@ -278,10 +267,9 @@ export const ENTITIES = {
       { k:'scan3d',  ref:'scanOptions', label:'3D 스캔' },
       { k:'hdri',    ref:'hdriOptions', label:'HDRI' },
     ],
-    listCols:['setId','shootLocation','setType','intExt','scan3d','hdri','model3d'],
+    listCols:['setId','shootLocation','setType','intExt','scan3d','hdri'],
     csvCols:['id','setId','shootLocation','setType','mainLocation','subLocation','intExt',
-             'scan3d','hdri','model3d','seasonStart','seasonEnd','path','description',
-             'elements3d','usedCuts','createdAt','updatedAt'],
+             'scan3d','hdri','path','description','elements3d','usedCuts','createdAt','updatedAt'],
     groups:[
       { title:'식별', fields:[
         { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
@@ -296,9 +284,6 @@ export const ENTITIES = {
       { title:'데이터 취득', fields:[
         { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions' },
         { k:'hdri',    label:'HDRI',    t:'select', ref:'hdriOptions' },
-        { k:'model3d', label:'3D 모델', t:'select', ref:'modelOptions' },
-        { k:'seasonStart', label:'시즌 시작', t:'select', ref:'seasons' },
-        { k:'seasonEnd',   label:'시즌 종료', t:'select', ref:'seasons' },
       ]},
       { title:'내용', fields:[
         { k:'description', label:'설명', t:'textarea', full:true },
@@ -320,12 +305,10 @@ export const ENTITIES = {
     thumbField:'thumbnail',
     filters:[
       { k:'type', ref:'assetTypes', label:'타입' },
-      { k:'propMethod', ref:'propMethods', label:'프랍 방식' },
-      { k:'lidar', ref:'lidarOptions', label:'LiDAR' },
       { k:'model3d', ref:'modelOptions', label:'3D 모델' },
     ],
-    listCols:['assetId','name','type','propMethod','lidar','hdri','model3d'],
-    csvCols:['id','assetId','name','type','material','propMethod','lidar','hdri','model3d',
+    listCols:['assetId','name','type','hdri','model3d'],
+    csvCols:['id','assetId','name','type','hdri','model3d',
              'description','memo','path','createdAt','updatedAt'],
     groups:[
       { title:'식별', fields:[
@@ -333,12 +316,9 @@ export const ENTITIES = {
         { k:'assetId', label:'에셋 ID', t:'text' },
         { k:'name', label:'이름', t:'text' },
         { k:'type', label:'타입', t:'select', ref:'assetTypes' },
-        { k:'material', label:'재질', t:'combo', ref:'assetMaterials' },
         { k:'path', label:'경로', t:'text' },
       ]},
       { title:'데이터 취득', fields:[
-        { k:'propMethod', label:'프랍 방식', t:'select', ref:'propMethods' },
-        { k:'lidar',   label:'LiDAR',   t:'select', ref:'lidarOptions' },
         { k:'hdri',    label:'HDRI',    t:'select', ref:'hdriOptions' },
         { k:'model3d', label:'3D 모델', t:'select', ref:'modelOptions' },
       ]},

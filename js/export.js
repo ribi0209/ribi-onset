@@ -43,7 +43,7 @@ async function exportSceneCutCSV(scenes, p){
   for (const c of allCuts) (bySceneId[c.sceneId] = bySceneId[c.sceneId] || []).push(c);
 
   const head = ['씬 ID','에피소드','씬','유닛','촬영일','촬영시각','INT/EXT','시간대','로케이션','세부 장소',
-                '컷 번호','VFX 샷 ID','작업 타입','작업 요소','상태','벤더',
+                '컷 번호','VFX 샷 ID','작업 타입','작업 요소','벤더',
                 '테이크 수','OK 테이크','캠 롤 / 클립','샷 노트','플레이트 요청','씬 노트'];
   const lines = [head.map(csvCell).join(',')];
 
@@ -57,14 +57,14 @@ async function exportSceneCutCSV(scenes, p){
     const base = [s.id, s.episode, s.scene, s.unit, s.shootDate, s.shootTime,
                   s.intExt, s.tod, s.location, s.subLocation];
     if (!cuts.length){
-      lines.push([...base, '', '', '', '', s.status, '', 0, 0, '', '', '', s.shotNote].map(csvCell).join(','));
+      lines.push([...base, '', '', '', '', '', 0, 0, '', '', '', s.shotNote].map(csvCell).join(','));
       continue;
     }
     for (const c of cuts){
       const tk = c.takes || [];
       const clips = tk.map(t => [t.camRoll, t.clip].filter(Boolean).join(' ')).filter(Boolean).join(' / ');
       lines.push([...base,
-        c.cutNo, c.vfxShotId, c.vfxType, c.workElement, c.status, c.vendor,
+        c.cutNo, c.vfxShotId, c.vfxType, c.workElement, c.vendor,
         tk.length, tk.filter(t => t.state === 'OK').length, clips,
         c.shotNote, c.plateNote, s.shotNote].map(csvCell).join(','));
     }
@@ -168,7 +168,6 @@ export async function exportBreakdown(scenes){
                        c.vfxShotId ? el('div',{class:'dim',text:c.vfxShotId}) : null ]),
         el('td', {}, [ el('span', { class:'bd-badge', text:c.vfxType || '—' }) ]),
         el('td', { text:c.workElement || '' }),
-        el('td', { text:c.status || '' }),
         el('td', { text:c.vendor || '' }),
         el('td', { text: tk.length ? `${tk.length} (OK ${tk.filter(t=>t.state==='OK').length})` : '—' }),
         el('td', { text: tk.map(t => [t.camRoll,t.clip].filter(Boolean).join(' ')).filter(Boolean).join(', ') }),
@@ -184,7 +183,6 @@ export async function exportBreakdown(scenes){
       el('div', { class:'bd-body' }, [
         el('div', { class:'bd-title' }, [
           el('b', { text:[s.episode, s.scene].filter(Boolean).join(' / ') || '(미지정)' }),
-          el('span', { class:'bd-badge', text:s.status || '' }),
           el('span', { class:'dim', text:`컷 ${cuts.length}` }),
         ]),
         el('code', { class:'bd-id', text:s.id }),
@@ -196,7 +194,7 @@ export async function exportBreakdown(scenes){
         s.script   ? el('p', { class:'bd-note' }, [ el('b',{text:'대본 '}), document.createTextNode(s.script) ]) : null,
         s.shotNote ? el('p', { class:'bd-note' }, [ el('b',{text:'씬 노트 '}), document.createTextNode(s.shotNote) ]) : null,
         cutRows.length ? el('table', { class:'ptable bd-cuts' }, [
-          el('thead', {}, [ el('tr', {}, ['','컷','타입','요소','상태','벤더','테이크','클립','노트']
+          el('thead', {}, [ el('tr', {}, ['','컷','타입','요소','벤더','테이크','클립','노트']
             .map(h => el('th', { text:h }))) ]),
           el('tbody', {}, cutRows)
         ]) : el('p', { class:'bd-note dim', text:'등록된 컷 없음' }),
