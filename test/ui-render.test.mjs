@@ -176,13 +176,15 @@ console.log('== 로케이션 개편 ==');
   const g0 = L.groups[0].fields.map(f=>f.k);
   ok(JSON.stringify(g0)===JSON.stringify(['thumbnail','mainLocation','subLocation','setId','setType','intExt','path']),
      `기본정보 순서 ${g0.join(' → ')}`);
-  ok(L.groups[0].cols===6, `기본정보 고정 ${L.groups[0].cols}열`);
+  ok(L.groups[0].cols===4, `기본정보 고정 ${L.groups[0].cols}열`);
   const sp = Object.fromEntries(L.groups[0].fields.map(f=>[f.k, f.span]));
   // 6열 기준: 1행 썸(1)+대장소(2)+소장소(2)+SETID(1)=6 / 2행 세트타입(2)+INT-EXT(2) / 3행 주소(5)
-  ok(sp.thumbnail===1 && sp.mainLocation===2 && sp.subLocation===2 && sp.setId===1,
-     `1행 합계 ${sp.thumbnail+sp.mainLocation+sp.subLocation+sp.setId}칸 = 6`);
-  ok(sp.setType===2 && sp.intExt===2, '2행: 세트 타입 + INT/EXT');
-  ok(sp.path===5, `3행: 주소 ${sp.path}칸 (썸네일 옆 전체)`);
+  ok(sp.thumbnail===1 && sp.mainLocation===1 && sp.subLocation===1 && sp.setId===1,
+     `1행 = 썸네일+대장소+소장소+SETID 각 1칸 (합 ${sp.thumbnail+sp.mainLocation+sp.subLocation+sp.setId} = 4)`);
+  ok(sp.setType===1 && sp.intExt===1, '2행: 세트 타입 · INT/EXT 도 각 1칸');
+  const widths = new Set([sp.mainLocation, sp.subLocation, sp.setId, sp.setType, sp.intExt]);
+  ok(widths.size===1, `입력칸 5개 폭이 모두 동일 (${[...widths]}칸)`);
+  ok(sp.path===3, `3행: 주소 ${sp.path}칸 (썸네일 옆 전체)`);
   ok(L.groups[0].fields.find(f=>f.k==='thumbnail').rowSpan===3, '썸네일이 3행 관통');
   ok(!L.groups.some(g=>g.fields.some(f=>f.k==='shootLocation')), '촬영장소 필드 제거');
   const sk = L.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');
@@ -198,12 +200,12 @@ console.log('== 로케이션 개편 ==');
   await V.entityDetailView(main,'locations',loc.id,()=>{}); await wait(350);
   const g = main.querySelector('.grid.fixed');
   ok(!!g, '고정 격자 렌더');
-  ok(g.getAttribute('style').includes('--cols:6'), `열 수 지정 (${g.getAttribute('style')})`);
+  ok(g.getAttribute('style').includes('--cols:4'), `열 수 지정 (${g.getAttribute('style')})`);
   const st = k => main.querySelector('.grid.fixed').children;
   const cells = Array.from(g.children);
-  ok(cells[1].getAttribute('style')==='grid-column:span 2', `대장소 span (${cells[1].getAttribute('style')})`);
+  ok(cells[1].getAttribute('style')==='grid-column:span 1', `대장소 span (${cells[1].getAttribute('style')})`);
   ok(cells[0].getAttribute('style').includes('grid-row:span 3'), `썸네일 rowSpan (${cells[0].getAttribute('style')})`);
-  ok(cells[6].getAttribute('style')==='grid-column:span 5', `주소 span (${cells[6].getAttribute('style')})`);
+  ok(cells[6].getAttribute('style')==='grid-column:span 3', `주소 span (${cells[6].getAttribute('style')})`);
   ok(!!main.querySelector('.sketch canvas'), '상세에 스케치 캔버스 렌더');
   const { PEN_COLORS } = await import('../js/ui.js');
   const sw = main.querySelectorAll('.sk-color');
@@ -228,7 +230,9 @@ console.log('== 로케이션 개편 ==');
      `컨셉 ${tiles[0].children.length}칸 / 현장 ${tiles[1].children.length}칸`);
   await V.entityListView(main,'locations',()=>{}); await wait(250);
   const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
-  ok(ths.includes('대장소') && ths.includes('소장소') && ths.includes('SET ID'), `표 헤더 ${ths.join('/')}`);
+  ok(ths.includes('대장소') && ths.includes('소장소') && ths.includes('SET ID'), `표 헤더 ${ths.join(' / ')}`);
+  ok(ths.includes('설명'), '목록에 설명 열 추가');
+  ok(!ths.includes('3D 스캔') && !ths.includes('HDRI'), '목록에서 3D 스캔 / HDRI 제거');
 }
 
 console.log('== 나머지 엔티티 (리스트 + 상세) ==');

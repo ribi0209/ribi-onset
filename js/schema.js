@@ -29,7 +29,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v11 · 2026-08-07';
+export const BUILD = 'v12 · 2026-08-07';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -278,21 +278,21 @@ export const ENTITIES = {
       { k:'scan3d',  ref:'scanOptions', label:'3D 스캔' },
       { k:'hdri',    ref:'hdriOptions', label:'HDRI' },
     ],
-    listCols:['mainLocation','subLocation','setId','setType','intExt','scan3d','hdri'],
+    listCols:['mainLocation','subLocation','setId','setType','intExt','description'],
     csvCols:['id','mainLocation','subLocation','setId','setType','intExt',
              'scan3d','hdri','path','description','elements3d','usedCuts','createdAt','updatedAt'],
     groups:[
-      /* cols/span 으로 줄바꿈을 고정한다 (자동 흐름이면 화면폭 따라 열이 흐트러짐)
+      /* 4열 고정 — 입력칸 폭을 모두 같게 맞춘다
          1행: 대장소 · 소장소 · SET ID   2행: 세트 타입 · INT/EXT   3행: 주소
          썸네일은 왼쪽에서 3행을 관통 */
-      { title:'기본정보', cols:6, fields:[
+      { title:'기본정보', cols:4, fields:[
         { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:3 },
-        { k:'mainLocation', label:'대장소', t:'combo', ref:'locations', span:2 },
-        { k:'subLocation',  label:'소장소', t:'text', span:2 },
+        { k:'mainLocation', label:'대장소', t:'combo', ref:'locations', span:1 },
+        { k:'subLocation',  label:'소장소', t:'text', span:1 },
         { k:'setId',        label:'SET ID', t:'text', span:1 },
-        { k:'setType', label:'세트 타입', t:'select', ref:'setTypes', span:2 },
-        { k:'intExt',  label:'INT / EXT', t:'select', ref:'intExt', span:2 },
-        { k:'path',    label:'주소', t:'text', span:5 },
+        { k:'setType', label:'세트 타입', t:'select', ref:'setTypes', span:1 },
+        { k:'intExt',  label:'INT / EXT', t:'select', ref:'intExt', span:1 },
+        { k:'path',    label:'주소', t:'text', span:3 },
       ]},
       { title:'데이터 취득', fields:[
         { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions' },
