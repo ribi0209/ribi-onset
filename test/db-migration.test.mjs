@@ -27,7 +27,9 @@ await new Promise((res,rej)=>{
     t.objectStore('scenes').put({ id:'PMT-20260801-101011-BBBB', episode:'EP02', scene:'3-1',
       vfxA:'3D VFX', vendor:'DEXTER', status:'완료' });
     t.objectStore('scenes').put({ id:'PMT-20260801-101012-CCCC', episode:'EP03', scene:'1-1' }); // VFX 없음
-    t.objectStore('locations').put({ id:'LOC-1', shootLocation:'팔복사무실', setType:'Location' });
+    t.objectStore('locations').put({ id:'LOC-1', shootLocation:'팔복사무실', setType:'Location',
+      model3d:'None', seasonStart:'3월', seasonEnd:'5월', surveyPhotos:[null,null] });
+    t.objectStore('locations').put({ id:'LOC-2', shootLocation:'조양 체육관', mainLocation:'인천', subLocation:'창고' });
     t.objectStore('assets').put({ id:'AST-1', name:'말', linkedSceneIds:['PMT-20260801-101010-AAAA'] });
     t.oncomplete = ()=>{ db.close(); res(); };
     t.onerror = ()=>rej(t.error);
@@ -38,7 +40,7 @@ console.log('== v2 DB 준비 완료 (씬 3건, VFX 정보 2건) ==');
 
 const DB = await import('../js/db.js');
 const db = await DB.open();
-ok(db.version===3, `DB 버전 ${db.version} → 3`);
+ok(db.version===4, `DB 버전 ${db.version} → 4`);
 ok(db.objectStoreNames.contains('projects'), 'projects 스토어 생성');
 ok(db.objectStoreNames.contains('cuts'), 'cuts 스토어 생성');
 
@@ -71,6 +73,18 @@ ok(b && b.vfxType==='3D', `'3D VFX' → '${b&&b.vfxType}'`);
 const s1 = scenes.find(s=>s.id==='PMT-20260801-101010-AAAA');
 ok(!('vfxA' in s1) && !('vendor' in s1) && !('filename' in s1), '씬에서 VFX 필드 제거');
 ok(s1.episode==='EP01' && s1.location==='조양 체육관' && s1.shotNote==='와이어 3개', '씬 고유 필드는 그대로');
+
+console.log('== v3 → v4 : 로케이션 정리 ==');
+const locs = await DB.list('locations');
+const l1 = locs.find(l=>l.id==='LOC-1');
+ok(l1.mainLocation==='팔복사무실', `촬영장소 → 대장소 값 보존 (${l1.mainLocation})`);
+ok(!('shootLocation' in l1), '촬영장소 필드 제거');
+ok(!('surveyPhotos' in l1), '서베이 사진 제거');
+ok(!('model3d' in l1) && !('seasonStart' in l1) && !('seasonEnd' in l1), '3D모델/시즌 제거');
+ok(l1.setType==='Location', '나머지 필드는 그대로');
+const l2 = locs.find(l=>l.id==='LOC-2');
+ok(l2.mainLocation==='인천' && l2.subLocation==='창고', '이미 대장소가 있으면 덮어쓰지 않음');
+ok(!('shootLocation' in l2), 'LOC-2 도 촬영장소 제거');
 
 const asset = (await DB.list('assets'))[0];
 ok(asset.linkedSceneIds[0]==='PMT-20260801-101010-AAAA', '에셋-씬 연결 유지');

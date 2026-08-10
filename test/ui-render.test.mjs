@@ -10,6 +10,14 @@ globalThis.window=w; globalThis.document=w.document;
 Object.defineProperty(globalThis,'navigator',{ value:{ storage:{ estimate:async()=>({usage:1,quota:100}), persist:async()=>true, persisted:async()=>false } }, configurable:true });
 const FDB = await import('fake-indexeddb');
 globalThis.indexedDB = new FDB.IDBFactory(); globalThis.IDBKeyRange = FDB.IDBKeyRange;
+w.HTMLCanvasElement.prototype.getContext = function(){
+  const noop = ()=>{};
+  return { fillRect:noop, strokeRect:noop, beginPath:noop, moveTo:noop, lineTo:noop,
+           stroke:noop, drawImage:noop, getImageData:()=>({data:[]}), putImageData:noop,
+           set fillStyle(v){}, set strokeStyle(v){}, set lineWidth(v){},
+           set lineCap(v){}, set lineJoin(v){}, set imageSmoothingQuality(v){} };
+};
+w.HTMLCanvasElement.prototype.toBlob = function(cb){ cb(new w.Blob([new Uint8Array([1,2,3])],{type:'image/png'})); };
 globalThis.FileReader = class { readAsDataURL(b){ b.arrayBuffer().then(x=>{ this.result='data:;base64,'+Buffer.from(x).toString('base64'); this.onload&&this.onload(); }); } };
 
 const errs=[]; process.on('unhandledRejection', r=>errs.push('unhandledRejection: '+(r&&r.stack||r)));
@@ -159,6 +167,37 @@ console.log('== 새 기본값 / 조건부 필드 ==');
   await V.entityListView(main,'scenes',()=>{}); await wait(200);
   ok(!Array.from(main.querySelectorAll('.dtable thead th')).some(t=>t.textContent==='에피소드'), '영화 → 표에서도 에피소드 열 숨김');
   const p3 = await DB.getProject(); p3.type='드라마'; await DB.setProject(p3);
+}
+
+console.log('== 로케이션 개편 ==');
+{
+  const { ENTITIES } = await import('../js/schema.js');
+  const L = ENTITIES.locations;
+  const g0 = L.groups[0].fields.map(f=>f.k);
+  ok(JSON.stringify(g0)===JSON.stringify(['thumbnail','mainLocation','subLocation','setId','setType','intExt','path']),
+     `기본정보 순서 ${g0.join(' → ')}`);
+  ok(L.groups[0].fields.find(f=>f.k==='path').full===true, '주소는 전체폭');
+  ok(!L.groups.some(g=>g.fields.some(f=>f.k==='shootLocation')), '촬영장소 필드 제거');
+  const sk = L.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');
+  ok(!!sk, `S펜 스케치 필드 추가 (${sk && sk.label})`);
+  const ph = L.groups.find(g=>g.title==='사진').fields;
+  ok(ph.length===2, `사진 그룹 ${ph.length}종 (서베이 제거)`);
+  ok(ph.find(f=>f.k==='conceptPhotos').n===6, `컨셉 ${ph.find(f=>f.k==='conceptPhotos').n}장`);
+  ok(ph.find(f=>f.k==='locationPhotos').n===8, `현장 ${ph.find(f=>f.k==='locationPhotos').n}장`);
+  ok(!ph.some(f=>f.k==='surveyPhotos'), '서베이 사진 제거');
+  ok(L.titleFields[0]==='mainLocation', '리스트 제목 = 대장소');
+
+  const loc = (await DB.list('locations'))[0];
+  await V.entityDetailView(main,'locations',loc.id,()=>{}); await wait(350);
+  ok(!!main.querySelector('.sketch canvas'), '상세에 스케치 캔버스 렌더');
+  ok(main.querySelectorAll('.sketch-bar button').length>=5, '스케치 도구 버튼');
+  const tiles = main.querySelectorAll('.photo-grid');
+  ok(tiles.length===2, `사진 그리드 2개 (${tiles.length})`);
+  ok(tiles[0].children.length===6 && tiles[1].children.length===8,
+     `컨셉 ${tiles[0].children.length}칸 / 현장 ${tiles[1].children.length}칸`);
+  await V.entityListView(main,'locations',()=>{}); await wait(250);
+  const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
+  ok(ths.includes('대장소') && ths.includes('소장소') && ths.includes('SET ID'), `표 헤더 ${ths.join('/')}`);
 }
 
 console.log('== 나머지 엔티티 (리스트 + 상세) ==');

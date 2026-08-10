@@ -20,6 +20,7 @@
  *   photo     이미지 1장 (탭하면 바로 카메라)
  *   photos    이미지 N장 (n 속성)
  *   link      다른 엔티티 레코드 다중 연결 (to 속성)
+ *   sketch    S펜/손가락 필기 캔버스 → PNG 로 저장
  * ===================================================================== */
 
 /* ---------- 기본 레퍼런스 ---------- */
@@ -259,9 +260,9 @@ export const ENTITIES = {
 
   /* ============ LOCATION ============ */
   locations: {
-    label:'Location', labelKo:'로케이션', title:'로케이션 정보', desc:'촬영장소, 세트 타입, 스캔·HDRI 진행상태와 레퍼런스를 관리합니다.',
+    label:'Location', labelKo:'로케이션', title:'로케이션 정보', desc:'대장소·소장소와 세트 타입, 스캔·HDRI 진행상태, 현장 레퍼런스를 관리합니다.',
     icon:'◈', store:'locations', idPrefix:'LOC',
-    titleFields:['shootLocation'], subtitleFields:['setId','path'],
+    titleFields:['mainLocation'], subtitleFields:['subLocation','setId'],
     thumbField:'thumbnail',
     filters:[
       { k:'setType', ref:'setTypes', label:'세트 타입' },
@@ -269,19 +270,18 @@ export const ENTITIES = {
       { k:'scan3d',  ref:'scanOptions', label:'3D 스캔' },
       { k:'hdri',    ref:'hdriOptions', label:'HDRI' },
     ],
-    listCols:['setId','shootLocation','setType','intExt','scan3d','hdri'],
-    csvCols:['id','setId','shootLocation','setType','mainLocation','subLocation','intExt',
+    listCols:['mainLocation','subLocation','setId','setType','intExt','scan3d','hdri'],
+    csvCols:['id','mainLocation','subLocation','setId','setType','intExt',
              'scan3d','hdri','path','description','elements3d','usedCuts','createdAt','updatedAt'],
     groups:[
-      { title:'식별', fields:[
+      { title:'기본정보', fields:[
         { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
-        { k:'setId', label:'세트 ID', t:'text' },
-        { k:'shootLocation', label:'촬영 장소', t:'combo', ref:'locations' },
+        { k:'mainLocation', label:'대장소', t:'combo', ref:'locations' },
+        { k:'subLocation',  label:'소장소', t:'text' },
+        { k:'setId',        label:'SET ID', t:'text' },
         { k:'setType', label:'세트 타입', t:'select', ref:'setTypes' },
-        { k:'intExt', label:'INT/EXT', t:'select', ref:'intExt' },
-        { k:'mainLocation', label:'메인 로케이션', t:'text' },
-        { k:'subLocation', label:'서브 로케이션', t:'text' },
-        { k:'path', label:'주소 / 경로', t:'text' },
+        { k:'intExt',  label:'INT / EXT', t:'select', ref:'intExt' },
+        { k:'path',    label:'주소', t:'text', full:true },
       ]},
       { title:'데이터 취득', fields:[
         { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions' },
@@ -291,11 +291,11 @@ export const ENTITIES = {
         { k:'description', label:'설명', t:'textarea', full:true },
         { k:'elements3d',  label:'3D 요소', t:'textarea', full:true },
         { k:'usedCuts',    label:'사용 컷', t:'text', full:true },
+        { k:'sketch',      label:'현장 스케치 (S펜)', t:'sketch', full:true },
       ]},
       { title:'사진', fields:[
-        { k:'conceptPhotos',  label:'컨셉',   t:'photos', n:2, full:true },
-        { k:'surveyPhotos',   label:'서베이', t:'photos', n:2, full:true },
-        { k:'locationPhotos', label:'현장',   t:'photos', n:2, full:true },
+        { k:'conceptPhotos',  label:'컨셉',  t:'photos', n:6, full:true },
+        { k:'locationPhotos', label:'현장',  t:'photos', n:8, full:true },
       ]},
     ],
   },

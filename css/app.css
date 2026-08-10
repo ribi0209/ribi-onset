@@ -436,3 +436,16 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
   padding:14px 16px; margin-bottom:14px;
 }
 .detail-page .cuts-sec{ margin-top:6px; }
+
+/* ---------- S펜 스케치 ---------- */
+.sketch{ border:1px solid var(--line); border-radius:11px; overflow:hidden; background:var(--bg2); }
+.sketch-bar{
+  display:flex; align-items:center; gap:6px; padding:7px 9px;
+  background:var(--bg3); border-bottom:1px solid var(--line); flex-wrap:wrap;
+}
+.sketch-bar .btn.tiny{ min-width:38px; }
+.sketch-cv{
+  display:block; width:100%; height:auto; background:#fff;
+  touch-action:none;              /* 그리는 동안 스크롤/줌 방지 */
+  cursor:crosshair;
+}

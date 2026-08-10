@@ -13,9 +13,9 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 3;
+export const DB_VER  = 4;
 export const APP_ID  = 'Ribi Onset Management';
-export const APP_VER = 6;
+export const APP_VER = 7;
 
 /** 프로젝트에 종속되는 기록 스토어 */
 const RECORD_STORES = ['scenes','cuts','locations','cameras','assets','hdri'];
@@ -68,6 +68,24 @@ function upgrade(db, t, oldVersion){
           if (Object.keys(LEGACY_FIELD).some(k => k in r)) os.put(normalizeLegacy(r));
       };
     }
+  }
+
+  /* v3 → v4 : 로케이션의 촬영장소를 대장소로 합치고, 폐기된 서베이 사진을 정리 */
+  if (oldVersion > 0 && oldVersion < 4 && db.objectStoreNames.contains('locations')){
+    const os = t.objectStore('locations');
+    os.getAll().onsuccess = (ev) => {
+      for (const r of (ev.target.result || [])){
+        let dirty = false;
+        if (r.shootLocation){
+          if (!r.mainLocation) r.mainLocation = r.shootLocation;   // 값 보존
+          delete r.shootLocation; dirty = true;
+        }
+        if ('surveyPhotos' in r){ delete r.surveyPhotos; dirty = true; }
+        if ('model3d' in r){ delete r.model3d; dirty = true; }
+        if ('seasonStart' in r || 'seasonEnd' in r){ delete r.seasonStart; delete r.seasonEnd; dirty = true; }
+        if (dirty) os.put(r);
+      }
+    };
   }
 
   /* v2 → v3 : 단일 프로젝트를 projects 레코드로 승격하고 모든 기록에 projectId 부여 */

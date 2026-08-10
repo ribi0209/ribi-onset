@@ -172,6 +172,148 @@ export function miniField(f, rec, onDirty){
   return inp;
 }
 
+/* ---------------- S펜 필기 캔버스 ---------------- */
+
+/**
+ * 손으로 그린 메모를 PNG 로 저장한다.
+ *  - S펜(pointerType 'pen')은 필압을 선 굵기에 반영한다.
+ *  - 펜이 한 번이라도 감지되면 손가락 입력은 무시한다 (팜 리젝션).
+ *    현장에서 태블릿을 손으로 짚고 쓰기 때문에 이게 없으면 낙서가 된다.
+ *  - 획을 멈추면 1.2초 뒤 자동 저장. 이전 이미지는 지우고 교체한다.
+ */
+export function sketchPad(getVal, setVal, onDirty){
+  const W = 1600, H = 620;
+  const wrap = el('div', { class:'sketch' });
+  const canvas = el('canvas', { class:'sketch-cv', width:W, height:H });
+  const ctx = canvas.getContext('2d', { willReadFrequently:false });
+
+  let penSeen = false, drawing = false, dirty = false, saveTimer = null;
+  let mode = 'pen', size = 3;
+  const undo = [];
+
+  function paintBg(){
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#e6ebf2'; ctx.lineWidth = 1;
+    for (let y = 40; y < H; y += 40){
+      ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); ctx.stroke();
+    }
+  }
+  paintBg();
+
+  // 기존 그림 불러오기
+  (async () => {
+    const v = getVal();
+    if (v && v.mid){
+      const url = await DB.mediaURL(v.mid);
+      if (!url) return;
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, W, H);
+      img.src = url;
+    }
+  })();
+
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (W / r.width), y: (e.clientY - r.top) * (H / r.height) };
+  }
+  function lineWidth(e){
+    if (mode === 'eraser') return size * 9;
+    const p = (e.pointerType === 'pen' && e.pressure > 0) ? e.pressure : 0.5;
+    return Math.max(0.6, size * (0.35 + p * 1.5));
+  }
+  function ignore(e){
+    if (e.pointerType === 'pen'){ penSeen = true; return false; }
+    return penSeen && e.pointerType === 'touch';   // 펜을 쓰는 중이면 손바닥 무시
+  }
+
+  function down(e){
+    if (ignore(e)) return;
+    e.preventDefault();
+    undo.push(ctx.getImageData(0, 0, W, H));
+    if (undo.length > 12) undo.shift();
+    drawing = true;
+    canvas.setPointerCapture(e.pointerId);
+    const { x, y } = pos(e);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = mode === 'eraser' ? '#ffffff' : '#111418';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.1, y);
+    ctx.lineWidth = lineWidth(e); ctx.stroke();
+  }
+  function move(e){
+    if (!drawing || ignore(e)) return;
+    e.preventDefault();
+    const { x, y } = pos(e);
+    ctx.lineWidth = lineWidth(e);
+    ctx.lineTo(x, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y);
+  }
+  function up(){
+    if (!drawing) return;
+    drawing = false; dirty = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 1200);
+  }
+
+  async function save(){
+    if (!dirty) return;
+    dirty = false;
+    const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    if (!blob) return;
+    const old = getVal();
+    const ref = await DB.putMedia(blob, { name:'sketch.png', width:W, height:H });
+    setVal(ref);
+    if (old && old.mid) await DB.delMedia(old.mid);
+    onDirty && onDirty();
+    status.textContent = '저장됨';
+    setTimeout(() => { status.textContent = ''; }, 1500);
+  }
+
+  canvas.addEventListener('pointerdown', down);
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('pointerleave', up);
+
+  const status = el('span', { class:'dim tiny' });
+  const sizeBtns = [2, 4, 8].map(n => el('button', {
+    class:'btn tiny' + (n === 3 ? '' : ' ghost'), text:'●'.padEnd(1),
+    style:`font-size:${8 + n}px`, title:`굵기 ${n}`,
+    onclick:(e) => {
+      size = n; mode = 'pen';
+      wrap.querySelectorAll('.sk-tool').forEach(b => b.classList.add('ghost'));
+      e.currentTarget.classList.remove('ghost');
+    }
+  }));
+  sizeBtns.forEach(b => b.classList.add('sk-tool'));
+  sizeBtns[1].classList.remove('ghost');
+
+  const bar = el('div', { class:'sketch-bar' }, [
+    ...sizeBtns,
+    el('button', { class:'btn tiny ghost sk-tool', text:'지우개', onclick:(e) => {
+      mode = 'eraser';
+      wrap.querySelectorAll('.sk-tool').forEach(b => b.classList.add('ghost'));
+      e.currentTarget.classList.remove('ghost');
+    }}),
+    el('button', { class:'btn tiny ghost', text:'되돌리기', onclick: () => {
+      const prev = undo.pop();
+      if (!prev) return;
+      ctx.putImageData(prev, 0, 0);
+      dirty = true; clearTimeout(saveTimer); saveTimer = setTimeout(save, 600);
+    }}),
+    el('button', { class:'btn tiny danger', text:'전체 지우기', onclick: async () => {
+      if (!await confirmBox('스케치 지우기', '그린 내용이 모두 사라집니다.', '지우기', true)) return;
+      undo.push(ctx.getImageData(0, 0, W, H));
+      paintBg(); dirty = true; save();
+    }}),
+    el('span', { class:'grow' }),
+    status,
+  ]);
+
+  wrap.append(bar, canvas);
+  return wrap;
+}
+
 export function lightbox(url, name){
   if (!url) return;
   const ov = el('div', { class:'overlay lightbox', onclick:()=>ov.remove() }, [
@@ -326,6 +468,12 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
           () => rec[f.k],
           (v) => { rec[f.k] = v; },
           f.preset || 'thumb', onDirty, { big: f.full }));
+
+      } else if (f.t === 'sketch'){
+        cell.appendChild(sketchPad(
+          () => rec[f.k],
+          (v) => { rec[f.k] = v; },
+          onDirty));
 
       } else if (f.t === 'seg'){
         const seg = el('div', { class:'seg' });
