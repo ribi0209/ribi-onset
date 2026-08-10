@@ -582,6 +582,23 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
       } else if (f.t === 'link'){
         cell.appendChild(await linkWidget(f, rec, onDirty));
 
+      } else if (f.t === 'recordRef'){
+        // 다른 페이지의 레코드를 하나 고른다. id 를 저장하므로 이름을 바꿔도 연결이 유지된다.
+        const { ENTITIES, displayName } = await import('./schema.js');
+        const sel = el('select', { class:'inp' });
+        sel.appendChild(el('option', { value:'', text:'— 선택 —' }));
+        const list = await DB.list(f.to);
+        for (const r of list) sel.appendChild(el('option', { value:r.id, text: displayName(f.to, r) }));
+        if (rec[f.k] && !list.some(r => r.id === rec[f.k]))
+          sel.appendChild(el('option', { value:rec[f.k], text:'(삭제된 항목)' }));
+        sel.value = rec[f.k] || '';
+        sel.addEventListener('change', () => { rec[f.k] = sel.value; onDirty && onDirty(); });
+        cell.appendChild(sel);
+        if (!list.length){
+          cell.appendChild(el('span', { class:'dim tiny',
+            text:`${ENTITIES[f.to].labelKo} 페이지에서 먼저 등록하세요.` }));
+        }
+
       } else if (f.t === 'backlink'){
         cell.appendChild(await backlinkList(f, rec, ctx));
 

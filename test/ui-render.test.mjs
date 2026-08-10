@@ -285,6 +285,57 @@ console.log('== 에셋 개편 ==');
   ok(main.querySelectorAll('.backlink .chip.link').length===0, '연결 해제하면 사라짐');
 }
 
+console.log('== HDRI 개편 ==');
+{
+  const { ENTITIES } = await import('../js/schema.js');
+  const H = ENTITIES.hdri;
+  ok(H.labelKo==='HDRI' && H.title==='HDRI 정보', `이름에서 '조명' 제거 (${H.labelKo} / ${H.title})`);
+  const keys = H.groups.flatMap(g=>g.fields.map(f=>f.k));
+  ok(!keys.includes('shootDate') && !keys.includes('shootTime'), '촬영일/촬영시각 제거');
+  ok(!keys.includes('subLocation'), '세부 장소 제거');
+  ok(!H.autoStamp, '자동 타임스탬프 해제');
+  const g0 = H.groups[0];
+  ok(g0.cols===4, `기본정보 ${g0.cols}열`);
+  const sp = Object.fromEntries(g0.fields.map(f=>[f.k,f.span]));
+  ok(sp.hdriId===1 && sp.locationId===2, '1행: HDRI ID · 로케이션');
+  ok(sp.intExt===1 && sp.tod===1, '2행: INT/EXT · 시간대');
+  const loc = g0.fields.find(f=>f.k==='locationId');
+  ok(loc.t==='recordRef' && loc.to==='locations', `로케이션 = 로케이션 페이지 연동 (${loc.t} → ${loc.to})`);
+  const ph = H.groups.find(g=>g.title==='사진 / 메모').fields;
+  ok(ph.find(f=>f.k==='hdriPhotos').n===8, `HDRI 소스 ${ph.find(f=>f.k==='hdriPhotos').n}칸`);
+  const sk = ph.find(f=>f.t==='sketch');
+  ok(!!sk, 'S펜 추가');
+  ok(ph.map(f=>f.k).indexOf('notes') < ph.map(f=>f.k).indexOf('sketch'), '비고 다음에 S펜');
+}
+{ // 실제 동작: 로케이션 드롭다운 + 이름 표시
+  const { displayName } = await import('../js/schema.js');
+  const hdri = await DB.list('hdri');
+  let rec = hdri[0];
+  if (!rec){
+    rec = { id:'HDR-TEST01', projectId:(await DB.getProject()).id, hdriId:'H-01' };
+    await DB.put('hdri', rec);
+  }
+  await V.entityDetailView(main,'hdri',rec.id,()=>{}); await wait(350);
+  const locs = await DB.list('locations');
+  const sel = Array.from(main.querySelectorAll('select.inp'))
+    .find(s => Array.from(s.options).some(o => locs.some(l => l.id === o.value)));
+  ok(!!sel, '로케이션 드롭다운이 Location 레코드로 채워짐');
+  ok(sel.options.length === locs.length + 1, `옵션 ${sel.options.length-1}개 = 로케이션 ${locs.length}건`);
+  sel.value = locs[0].id; ev(sel,'change'); await wait(800);
+  const saved = await DB.get('hdri', rec.id);
+  ok(saved.locationId === locs[0].id, `id 로 저장됨 (${saved.locationId})`);
+
+  // 목록에서는 id 가 아니라 이름으로 보인다
+  await V.entityListView(main,'hdri',()=>{}); await wait(300);
+  const rowTxt = main.querySelector('tr.drow').textContent;
+  ok(!rowTxt.includes('LOC-'), '목록에 id 노출 안 함');
+  ok(rowTxt.includes(displayName('locations', locs[0]).split(' — ')[0]), `목록에 로케이션 이름 표시: ${displayName('locations', locs[0])}`);
+  const grids = () => main.querySelectorAll('.photo-grid');
+  await V.entityDetailView(main,'hdri',rec.id,()=>{}); await wait(350);
+  ok(grids()[0].children.length===8, `HDRI 소스 ${grids()[0].children.length}칸 렌더`);
+  ok(!!main.querySelector('.sketch canvas'), 'S펜 캔버스 렌더');
+}
+
 console.log('== 카메라: 목록형 (상세 없음) ==');
 {
   const { ENTITIES } = await import('../js/schema.js');

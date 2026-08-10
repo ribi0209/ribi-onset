@@ -204,6 +204,34 @@ function normalizeLegacy(rec){
   return o;
 }
 
+/**
+ * 스토어별 정규화. DB 업그레이드와 백업 가져오기가 같은 규칙을 쓰도록 한 곳에 모은다.
+ * (예전에는 업그레이드에만 있어서, 구 백업을 새로 가져오면 대장소가 비어 있었다)
+ */
+function normalizeStore(store, r){
+  if (store === 'locations'){
+    if (r.shootLocation){
+      if (!r.mainLocation) r.mainLocation = r.shootLocation;
+      delete r.shootLocation;
+    }
+    delete r.surveyPhotos; delete r.model3d;
+    delete r.seasonStart; delete r.seasonEnd;
+  }
+  if (store === 'assets'){
+    for (const k of ['path','memo','propMethod','lidar','hdri','model3d','material',
+                     'imagePhotos','surveyPhotos','platePhotos']) delete r[k];
+  }
+  if (store === 'hdri'){
+    delete r.shootDate; delete r.shootTime; delete r.subLocation;
+    // 구 백업의 로케이션은 문자열이었다 → 이름만 남겨두고 연결은 사용자가 다시 고른다
+    if (typeof r.location === 'string' && r.location && !r.locationId){
+      r.legacyLocationName = r.location;
+    }
+    delete r.location;
+  }
+  return r;
+}
+
 function tx(stores, mode='readonly'){ return _db.transaction(stores, mode); }
 function wrap(req){
   return new Promise((res, rej) => {
@@ -637,7 +665,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
 
   for (const s of RECORD_STORES){
     for (const raw of srcOf(s)){
-      const rec = normalizeLegacy(await deflateRec(raw));
+      const rec = normalizeStore(s, normalizeLegacy(await deflateRec(raw)));
       if (!rec.id) rec.id = (s === 'scenes') ? makeSceneId(rawProjects[0]?.name)
                                              : makeId(ENTITIES[s]?.idPrefix || 'REC');
       if (!rec.projectId) rec.projectId = firstPid;
@@ -670,6 +698,28 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   for (const c of spawned){
     await wrap(tx(['cuts'],'readwrite').objectStore('cuts').put(c));
     stats.cuts++;
+  }
+
+  // 에셋에 남아 있는 정방향 연결을 씬 쪽으로 옮긴다 (연결의 주인은 씬)
+  for (const a of await listAll('assets')){
+    if (!Array.isArray(a.linkedSceneIds) || !a.linkedSceneIds.length){
+      if ('linkedSceneIds' in a){
+        delete a.linkedSceneIds;
+        await wrap(tx(['assets'],'readwrite').objectStore('assets').put(a));
+      }
+      continue;
+    }
+    for (const sid of a.linkedSceneIds){
+      const sc = await wrap(tx(['scenes']).objectStore('scenes').get(sid));
+      if (!sc) continue;
+      if (!Array.isArray(sc.linkedAssetIds)) sc.linkedAssetIds = [];
+      if (!sc.linkedAssetIds.includes(a.id)){
+        sc.linkedAssetIds.push(a.id);
+        await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(sc));
+      }
+    }
+    delete a.linkedSceneIds;
+    await wrap(tx(['assets'],'readwrite').objectStore('assets').put(a));
   }
 
   if (mode === 'merge'){ onProgress('미사용 이미지 정리', 98); await gcMedia(); }

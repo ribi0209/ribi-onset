@@ -5,7 +5,8 @@
 
 import * as DB from './db.js';
 import {
-  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD, fieldMap, labelOf
+  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD,
+  fieldMap, labelOf, displayName
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -126,6 +127,16 @@ export async function entityListView(root, entKey, go){
     const f = fieldMap(entKey)[k];
     return !(f && typeof f.when === 'function' && !f.when(project));
   });
+  // recordRef 열은 id 대신 이름으로 보여준다
+  const refMaps = {};
+  for (const k of cols){
+    const f = fieldMap(entKey)[k];
+    if (f && f.t === 'recordRef'){
+      refMaps[k] = Object.fromEntries((await DB.list(f.to)).map(r => [r.id, displayName(f.to, r)]));
+    }
+  }
+  const cellText = (r, k) => refMaps[k] ? (refMaps[k][r[k]] || '') : r[k];
+
   const tableWrap = el('div', { class:'table-wrap' });
   const countEl = el('div', { class:'dim tiny count' });
 
@@ -160,10 +171,10 @@ export async function entityListView(root, entKey, go){
         if (url) thumb.appendChild(el('img', { src:url }));
       } else thumb.appendChild(el('span', { class:'noimg', text:'NO IMG' }));
 
-      const tds = cols.map((k, idx) => el('td', {
-        class: idx === 0 ? 'strong' : (r[k] ? '' : 'dim'),
-        text: r[k] || '—'
-      }));
+      const tds = cols.map((k, idx) => {
+        const txt = cellText(r, k);
+        return el('td', { class: idx === 0 ? 'strong' : (txt ? '' : 'dim'), text: txt || '—' });
+      });
       if (entKey === 'scenes'){
         const cs = cutIndex[r.id] || [];
         const tk = cs.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);

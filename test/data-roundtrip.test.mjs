@@ -39,6 +39,17 @@ const vendorSrc = legacyWithVfx.find(c=>c.vendor);
 if (vendorSrc){ const mapped = cuts.find(c=>c.sceneId===vendorSrc.id);
   ok(mapped && mapped.vendor===vendorSrc.vendor, `벤더 이관 (${mapped&&mapped.vendor})`); }
 
+console.log('== 3-b. 가져오기에도 스토어 정규화 적용 ==');
+{
+  const locs = await DB.list('locations');
+  const named = locs.filter(l => l.mainLocation);
+  ok(named.length === orig.locations.filter(l=>l.shootLocation).length,
+     `촬영장소 → 대장소 이관 ${named.length}건 (${named.map(l=>l.mainLocation).join(', ')})`);
+  ok(locs.every(l => !('shootLocation' in l)), '구 필드 제거');
+  ok(locs.every(l => !('surveyPhotos' in l) && !('model3d' in l)), '폐기 사진/필드 제거');
+  ok((await DB.list('assets')).every(a => !('linkedSceneIds' in a)), '에셋 정방향 연결 제거');
+}
+
 console.log('== 4. 멀티 프로젝트 격리 ==');
 const p2 = await DB.createProject({ name:'두번째 작품' });
 ok((await DB.listProjects()).length===2, '프로젝트 2개');

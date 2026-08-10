@@ -6,7 +6,7 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ENTITIES, labelOf } from './schema.js';
+import { ENTITIES, labelOf, displayName } from './schema.js';
 import { el, toast, progress, nowDate } from './ui.js';
 
 /* ---------------- CSV ---------------- */
@@ -30,8 +30,16 @@ export async function exportCSV(entKey, rows){
   if (entKey === 'scenes') return exportSceneCutCSV(rows, p);
 
   const cols = cfg.csvCols;
+  // recordRef 는 id 대신 이름으로 내보낸다
+  const refMaps = {};
+  for (const g of cfg.groups) for (const f of g.fields){
+    if (f.t === 'recordRef' && cols.includes(f.k)){
+      refMaps[f.k] = Object.fromEntries((await DB.list(f.to)).map(r => [r.id, displayName(f.to, r)]));
+    }
+  }
   const lines = [cols.map(c => csvCell(labelOf(entKey, c))).join(',')];
-  for (const r of rows) lines.push(cols.map(c => csvCell(r[c])).join(','));
+  for (const r of rows)
+    lines.push(cols.map(c => csvCell(refMaps[c] ? (refMaps[c][r[c]] || '') : r[c])).join(','));
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
   download(blob, `${DB.slugOf(p.name)}_${cfg.label}_${nowDate()}.csv`);
   toast(`CSV ${rows.length}행 내보냄`);

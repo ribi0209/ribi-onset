@@ -22,6 +22,7 @@
  *   link      다른 엔티티 레코드 다중 연결 (to 속성)
  *   sketch    S펜/손가락 필기 캔버스 → PNG 로 저장
  *   backlink  반대편에서 연결한 결과를 읽기 전용으로 표시 (from / via 속성)
+ *   recordRef 다른 엔티티 레코드 1개를 고른다 (to 속성, id 를 저장)
  *
  * 엔티티에 inline:true 를 주면 상세 페이지 없이 리스트에서 바로 편집한다.
  * 이때 화면에 나올 항목/순서는 inlineFields 로 정한다.
@@ -33,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v15 · 2026-08-07';
+export const BUILD = 'v16 · 2026-08-07';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -398,36 +399,32 @@ export const ENTITIES = {
     ],
   },
 
-  /* ============ HDRI / LIGHT ============ */
+  /* ============ HDRI ============ */
   hdri: {
-    label:'HDRI', labelKo:'HDRI·조명', title:'HDRI · 조명 정보', desc:'HDRI 촬영 스펙과 현장 조명 측정값을 기록합니다.',
+    label:'HDRI', labelKo:'HDRI', title:'HDRI 정보', desc:'HDRI 촬영 스펙과 현장 조명 측정값을 기록합니다.',
     icon:'◐', store:'hdri', idPrefix:'HDR',
-    titleFields:['hdriId','location'], subtitleFields:['shootDate','tod'],
+    titleFields:['hdriId'], subtitleFields:['intExt','tod'],
     thumbField:'thumbnail',
-    inherit:['location','intExt','tod','camera','lens','brackets','evStep','directions','chart'],
-    autoStamp:{ date:'shootDate', time:'shootTime' },
+    inherit:['locationId','intExt','tod','camera','lens','brackets','evStep','directions','chart'],
     filters:[
-      { k:'location', ref:'locations', label:'로케이션' },
       { k:'tod', ref:'tod', label:'시간대' },
       { k:'chart', ref:'hdriCharts', label:'차트' },
       { k:'keySource', ref:'keySources', label:'키 소스' },
     ],
-    listCols:['hdriId','shootDate','shootTime','location','intExt','tod','camera','brackets','keyStop','keySource'],
-    csvCols:['id','hdriId','shootDate','shootTime','location','subLocation','intExt','tod',
+    listCols:['hdriId','locationId','intExt','tod','camera','brackets','keyStop','keySource'],
+    csvCols:['id','hdriId','locationId','intExt','tod',
              'camera','lens','brackets','evStep','directions','chart',
              'iso','shutter','wb','tStop','keyStop','keyDirection','keySource','meterMode',
              'lightColor','ambientStop','ratio','notes','createdAt','updatedAt'],
     groups:[
-      { title:'식별', fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
-        { k:'hdriId', label:'HDRI ID', t:'text' },
-        { k:'shootDate', label:'촬영일', t:'date' },
-        { k:'shootTime', label:'촬영시각', t:'time' },
-        { k:'location', label:'로케이션', t:'combo', ref:'locations' },
-        { k:'subLocation', label:'세부 장소', t:'text' },
-        { k:'intExt', label:'INT/EXT', t:'select', ref:'intExt' },
-        { k:'tod', label:'시간대', t:'select', ref:'tod' },
-        { k:'linkedScene', label:'연결 씬', t:'link', to:'scenes', full:true },
+      /* 4열 고정 — 1행: HDRI ID · 로케이션   2행: INT/EXT · 시간대   3행: 연결 씬 */
+      { title:'기본정보', cols:4, fields:[
+        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:3 },
+        { k:'hdriId', label:'HDRI ID', t:'text', span:1 },
+        { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:2 },
+        { k:'intExt', label:'INT / EXT', t:'select', ref:'intExt', span:1 },
+        { k:'tod',    label:'시간대',    t:'select', ref:'tod', span:1 },
+        { k:'linkedScene', label:'연결 씬', t:'link', to:'scenes', span:3 },
       ]},
       { title:'HDRI 촬영 스펙', fields:[
         { k:'camera', label:'카메라', t:'combo', ref:'hdriCameras' },
@@ -451,9 +448,10 @@ export const ENTITIES = {
         { k:'ratio', label:'키:필 비율', t:'text' },
       ]},
       { title:'사진 / 메모', fields:[
-        { k:'hdriPhotos', label:'HDRI 소스', t:'photos', n:4, full:true },
-        { k:'chartPhotos', label:'차트 / 볼', t:'photos', n:2, full:true },
+        { k:'hdriPhotos', label:'HDRI 소스', t:'photos', n:8, perRow:8, preset:'plate', full:true },
+        { k:'chartPhotos', label:'차트 / 볼', t:'photos', n:4, perRow:4, full:true },
         { k:'notes', label:'비고', t:'textarea', full:true },
+        { k:'sketch', label:'스케치 (S펜)', t:'sketch', full:true },
       ]},
     ],
   },
@@ -481,6 +479,15 @@ export const VFX_TYPE_MAP = {
   '3D VFX':'3D', 'SIMULATION':'3D', 'CREATURE':'3D', 'ENVIRONMENT':'3D',
   'COMPOSITING':'COMP', 'MATTE PAINT':'MATTE PAINT',
 };
+
+/** 레코드를 한 줄로 표기 (연결 목록·드롭다운에 쓰임) */
+export function displayName(entKey, r){
+  if (!r) return '';
+  const cfg = ENTITIES[entKey];
+  const head = cfg.titleFields.map(k => r[k]).filter(Boolean).join(' · ');
+  const sub  = (cfg.subtitleFields || []).map(k => r[k]).filter(Boolean).join(' · ');
+  return [head, sub].filter(Boolean).join(' — ') || r.id;
+}
 
 export function allFields(ent){ return ENTITIES[ent].groups.flatMap(g => g.fields); }
 export function fieldMap(ent){ const m={}; for (const f of allFields(ent)) m[f.k]=f; return m; }
