@@ -178,7 +178,8 @@ export const ENTITIES = {
 
   /* ============ SCENE — 현장 기록 단위 ============ */
   scenes: {
-    label:'Scene', labelKo:'씬', icon:'◧', store:'scenes', idPrefix:null,
+    label:'Scene', labelKo:'씬', title:'씬 리스트', desc:'촬영한 씬과 그 안의 컷·테이크를 기록합니다.',
+    icon:'◧', store:'scenes', idPrefix:null,
     titleFields:['episode','scene'],
     subtitleFields:['location','subLocation'],
     thumbField:'thumbnail',
@@ -258,7 +259,8 @@ export const ENTITIES = {
 
   /* ============ LOCATION ============ */
   locations: {
-    label:'Location', labelKo:'로케이션', icon:'◈', store:'locations', idPrefix:'LOC',
+    label:'Location', labelKo:'로케이션', title:'로케이션 정보', desc:'촬영장소, 세트 타입, 스캔·HDRI 진행상태와 레퍼런스를 관리합니다.',
+    icon:'◈', store:'locations', idPrefix:'LOC',
     titleFields:['shootLocation'], subtitleFields:['setId','path'],
     thumbField:'thumbnail',
     filters:[
@@ -300,7 +302,8 @@ export const ENTITIES = {
 
   /* ============ ASSET ============ */
   assets: {
-    label:'Asset', labelKo:'에셋', icon:'◇', store:'assets', idPrefix:'AST',
+    label:'Asset', labelKo:'에셋', title:'에셋 정보', desc:'캐릭터·프랍·차량·환경 등 3D 제작 대상과 취득 데이터를 관리합니다.',
+    icon:'◇', store:'assets', idPrefix:'AST',
     titleFields:['name'], subtitleFields:['assetId','type'],
     thumbField:'thumbnail',
     filters:[
@@ -337,7 +340,8 @@ export const ENTITIES = {
 
   /* ============ CAMERA ============ */
   cameras: {
-    label:'Camera', labelKo:'카메라', icon:'◎', store:'cameras', idPrefix:'CAM',
+    label:'Camera', labelKo:'카메라', title:'카메라 정보', desc:'바디·포맷·렌즈 등 촬영에 사용한 장비 사양을 기록합니다.',
+    icon:'◎', store:'cameras', idPrefix:'CAM',
     titleFields:['name'], subtitleFields:['camRoll','lensSeries'],
     thumbField:'photo',
     filters:[
@@ -371,7 +375,8 @@ export const ENTITIES = {
 
   /* ============ HDRI / LIGHT ============ */
   hdri: {
-    label:'HDRI', labelKo:'HDRI·조명', icon:'◐', store:'hdri', idPrefix:'HDR',
+    label:'HDRI', labelKo:'HDRI·조명', title:'HDRI · 조명 정보', desc:'HDRI 촬영 스펙과 현장 조명 측정값을 기록합니다.',
+    icon:'◐', store:'hdri', idPrefix:'HDR',
     titleFields:['hdriId','location'], subtitleFields:['shootDate','tod'],
     thumbField:'thumbnail',
     inherit:['location','intExt','tod','camera','lens','brackets','evStep','directions','chart'],

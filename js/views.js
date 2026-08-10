@@ -5,7 +5,7 @@
 
 import * as DB from './db.js';
 import {
-  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, labelOf
+  ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, fieldMap, labelOf
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -39,85 +39,78 @@ async function flushAll(){
   timers.clear();
 }
 
-/* ===================== 엔티티 리스트 + 에디터 ===================== */
+/* ===================== 엔티티 : 리스트 페이지 ===================== */
 
-export async function entityView(root, entKey){
+/** 리스트 → 클릭 → 상세 페이지 (좌우 분할 아님) */
+export async function entityListView(root, entKey, go){
   const cfg = ENTITIES[entKey];
   const S = st(entKey);
   clear(root);
 
-  const listPane = el('aside', { class:'pane list-pane' });
-  const editPane = el('section', { class:'pane edit-pane' });
-  root.appendChild(el('div', { class:'split' }, [listPane, editPane]));
-
   const project = await DB.getProject();
-  let rows = await DB.list(cfg.store);
-  let cutIndex = entKey === 'scenes' ? await cutsBySceneMap() : null;
-
-  async function cutsBySceneMap(){
-    const all = await DB.list('cuts');
-    const m = {};
-    for (const c of all) (m[c.sceneId] = m[c.sceneId] || []).push(c);
-    return m;
+  const rows = await DB.list(cfg.store);
+  const cutIndex = {};
+  if (entKey === 'scenes'){
+    for (const c of await DB.list('cuts')) (cutIndex[c.sceneId] = cutIndex[c.sceneId] || []).push(c);
   }
 
+  const navNo = String(NAV.findIndex(n => n.k === entKey) + 1).padStart(2,'0');
+
+  /* ---- 헤더 ---- */
+  const head = el('header', { class:'page-head' }, [
+    el('div', { class:'grow' }, [
+      el('div', { class:'eyebrow', text:`${navNo} · ${cfg.label.toUpperCase()}` }),
+      el('h1', { text: cfg.title || cfg.label }),
+      cfg.desc ? el('p', { class:'dim', text: cfg.desc }) : null,
+    ]),
+    el('div', { class:'row gap wrap' }, [
+      el('button', { class:'btn ghost', text:'CSV', onclick: () => exportCSV(entKey, filtered()) }),
+      entKey === 'scenes'
+        ? el('button', { class:'btn ghost', text:'Breakdown', onclick: () => exportBreakdown(filtered()) }) : null,
+      el('button', { class:'btn ghost', text:'PDF', onclick: () => exportPrint(entKey, filtered()) }),
+      el('button', { class:'btn', text:'📷 촬영 + 추가', onclick: () => addNew(true) }),
+      el('button', { class:'btn primary', text:`+ ${cfg.labelKo} 추가`, onclick: () => addNew(false) }),
+    ])
+  ]);
+
   /* ---- 검색 / 필터 ---- */
-  const search = el('input', { class:'inp search', placeholder:`${cfg.label} 검색`, value:S.q });
-  search.addEventListener('input', () => { S.q = search.value; S.limit = PAGE; drawList(); });
+  const search = el('input', { class:'inp search', placeholder:`${cfg.labelKo} 검색`, value:S.q });
+  search.addEventListener('input', () => { S.q = search.value; draw(); });
 
   const filterBar = el('div', { class:'filterbar' });
   function buildFilters(){
     clear(filterBar);
+    filterBar.appendChild(search);
     for (const f of (cfg.filters || [])){
       if (typeof f.when === 'function' && !f.when(project)) continue;
       const sel = el('select', { class:'inp mini' });
       sel.appendChild(el('option', { value:'', text:f.label }));
       const vals = Array.from(new Set([...(refList(f.ref)||[]), ...rows.map(r => r[f.k]).filter(Boolean)]));
-      for (const v of vals) sel.appendChild(el('option', { value:v, text:v }));
+      for (const val of vals) sel.appendChild(el('option', { value:val, text:val }));
       sel.value = S.filters[f.k] || '';
       if (sel.value) sel.classList.add('on');
-      sel.addEventListener('change', () => { S.filters[f.k] = sel.value; S.limit = PAGE; drawList(); buildFilters(); });
+      sel.addEventListener('change', () => { S.filters[f.k] = sel.value; draw(); buildFilters(); });
       filterBar.appendChild(sel);
     }
     const sortSel = el('select', { class:'inp mini' }, [
+      el('option', { value:'name', text:'식별자순' }),
       el('option', { value:'new',  text:'최신순' }),
       el('option', { value:'old',  text:'오래된순' }),
-      el('option', { value:'name', text:'식별자순' }),
     ]);
     sortSel.value = S.sort;
-    sortSel.addEventListener('change', () => { S.sort = sortSel.value; drawList(); });
+    sortSel.addEventListener('change', () => { S.sort = sortSel.value; draw(); });
     filterBar.appendChild(sortSel);
     if (Object.values(S.filters).some(Boolean) || S.q){
       filterBar.appendChild(el('button', { class:'btn tiny ghost', text:'초기화', onclick: () => {
-        S.filters = {}; S.q = ''; search.value = ''; S.limit = PAGE; drawList(); buildFilters();
+        S.filters = {}; S.q = ''; search.value = ''; draw(); buildFilters();
       }}));
     }
   }
 
-  const actions = el('div', { class:'row gap wrap actionbar' }, [
-    el('button', { class:'btn primary', text:`+ ${cfg.label}`, onclick: () => newRecord(false) }),
-    el('button', { class:'btn', text:'📷 촬영 + 등록', onclick: () => newRecord(true) }),
-    el('button', { class:'btn ghost', text:'CSV', onclick: () => exportCSV(entKey, filtered()) }),
-    entKey === 'scenes'
-      ? el('button', { class:'btn ghost', text:'Breakdown', onclick: () => exportBreakdown(filtered()) }) : null,
-    el('button', { class:'btn ghost', text:'PDF', onclick: () => exportPrint(entKey, filtered()) }),
-  ]);
-
-  const countEl = el('div', { class:'dim count' });
-  const listEl  = el('div', { class:'reclist' });
-  listEl.addEventListener('scroll', () => {
-    if (listEl.scrollTop + listEl.clientHeight > listEl.scrollHeight - 200){
-      if (S.limit < filtered().length){ S.limit += PAGE; drawList(true); }
-    }
-  });
-
-  listPane.append(actions, search, filterBar, countEl, listEl);
-  buildFilters();
-
   function filtered(){
     const q = (S.q || '').trim().toLowerCase();
     let out = rows.filter(r => {
-      for (const [k,v] of Object.entries(S.filters)) if (v && (r[k] || '') !== v) return false;
+      for (const [k,val] of Object.entries(S.filters)) if (val && (r[k] || '') !== val) return false;
       if (!q) return true;
       return Object.entries(r).some(([k,val]) => typeof val === 'string' && val.toLowerCase().includes(q));
     });
@@ -128,152 +121,166 @@ export async function entityView(root, entKey){
     return out;
   }
 
-  let rendered = 0;
-  async function drawList(append = false){
-    const f = filtered();
-    countEl.textContent = `${f.length} / ${rows.length}`;
-    if (!append){ clear(listEl); rendered = 0; }
-    const slice = f.slice(rendered, S.limit);
-    for (const r of slice) listEl.appendChild(await rowEl(r));
-    rendered += slice.length;
-    if (!f.length) listEl.appendChild(el('div', { class:'empty', text:'기록이 없습니다.' }));
-  }
+  /* ---- 표 ---- */
+  const cols = (cfg.listCols || []).filter(k => {
+    const f = fieldMap(entKey)[k];
+    return !(f && typeof f.when === 'function' && !f.when(project));
+  });
+  const tableWrap = el('div', { class:'table-wrap' });
+  const countEl = el('div', { class:'dim tiny count' });
 
-  async function rowEl(r){
-    const title = cfg.titleFields.map(k => r[k]).filter(Boolean).join(' · ') || '(제목 없음)';
-    const sub   = cfg.subtitleFields.map(k => r[k]).filter(Boolean).join(' · ');
-    const thumb = el('div', { class:'thumb' });
-    const tv = r[cfg.thumbField];
-    if (tv && tv.mid){
-      const url = await DB.mediaURL(tv.mid);
-      if (url) thumb.appendChild(el('img', { src:url }));
-    } else thumb.textContent = cfg.icon;
-
-    const tags = el('div', { class:'tags' });
-    for (const k of (cfg.listCols || []).slice(0, 6)){
-      if (!r[k] || cfg.titleFields.includes(k)) continue;
-      tags.appendChild(el('span', { class:'tag t-'+k, text:r[k] }));
+  async function draw(){
+    const list = filtered();
+    countEl.textContent = `${list.length} / ${rows.length}`;
+    clear(tableWrap);
+    if (!list.length){
+      tableWrap.appendChild(el('div', { class:'empty', text:`등록된 ${cfg.labelKo}이(가) 없습니다.` }));
+      return;
     }
-    if (entKey === 'scenes'){
-      const cs = (cutIndex[r.id] || []);
-      if (cs.length){
-        const takes = cs.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);
-        tags.appendChild(el('span', { class:'tag t-cut', text:`컷 ${cs.length}${takes ? ' · 테이크 '+takes : ''}` }));
-      }
-    }
-
-    return el('div', {
-      class:'rec' + (S.selected === r.id ? ' on' : ''), dataset:{ id:r.id },
-      onclick: () => select(r.id)
-    }, [ thumb, el('div', { class:'rec-body' }, [
-      el('div', { class:'rec-title', text:title }),
-      sub ? el('div', { class:'rec-sub dim', text:sub }) : null,
-      tags
-    ]) ]);
-  }
-
-  /* ---- 신규 ---- */
-  async function newRecord(withCapture){
-    const project = await DB.getProject();
-    const base = { projectId: project.id };
-    for (const g of cfg.groups) for (const f of g.fields){
-      base[f.k] = (f.t === 'photos') ? new Array(f.n||2).fill(null)
-                : (f.t === 'photo') ? null
-                : (f.t === 'link') ? [] : '';
-    }
-    if (cfg.inherit){
-      const last = rows.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
-      if (last) for (const k of cfg.inherit) if (last[k]) base[k] = last[k];
-    }
-    base.id = (entKey === 'scenes') ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix || 'REC');
-    if (cfg.autoStamp){
-      base[cfg.autoStamp.date] = nowDate();
-      base[cfg.autoStamp.time] = nowTime();
-    }
-    if (withCapture){
-      const files = await pickFiles({ capture:true });
-      if (files.length){
-        const p = progress(); p.set('이미지 압축 중', 40);
-        try { base[cfg.thumbField] = await ingest(files[0], 'thumb'); }
-        catch(e){ toast('이미지 처리 실패: '+e.message, 'err'); }
-        finally { p.done(); }
-      }
-    }
-    await DB.put(cfg.store, base);
-    rows = await DB.list(cfg.store);
-    if (entKey === 'scenes') cutIndex = await cutsBySceneMap();
-    S.selected = base.id;
-    buildFilters(); await drawList(); await select(base.id);
-    toast(`${cfg.label} 생성`);
-  }
-
-  /* ---- 에디터 ---- */
-  async function select(id){
-    await flushAll();
-    S.selected = id;
-    const rec = await DB.get(cfg.store, id);
-    for (const n of listEl.children) if (n.dataset) n.classList.toggle('on', n.dataset.id === id);
-    clear(editPane);
-    if (!rec){ editPane.appendChild(el('div', { class:'empty', text:'좌측에서 선택하세요.' })); return; }
-
-    const refreshRow = async () => {
-      rows = await DB.list(cfg.store);
-      if (entKey === 'scenes') cutIndex = await cutsBySceneMap();
-      const node = Array.from(listEl.children).find(n => n.dataset && n.dataset.id === rec.id);
-      if (node){ const nn = await rowEl(rec); nn.classList.add('on'); node.replaceWith(nn); }
-    };
-
-    const head = el('div', { class:'edit-head' }, [
-      el('div', {}, [
-        el('div', { class:'idline' }, [
-          el('code', { text:rec.id }),
-          el('span', { id:'saveDot', class:'savedot', title:'자동 저장됨' })
-        ]),
-        el('div', { class:'dim tiny', text:`수정 ${(rec.updatedAt||'').slice(0,19).replace('T',' ')}` })
-      ]),
-      el('div', { class:'row gap' }, [
-        el('button', { class:'btn ghost', text:'복제', onclick: async () => {
-          const copy = JSON.parse(JSON.stringify(rec));
-          copy.id = entKey === 'scenes' ? DB.makeSceneId((await DB.getProject()).name) : DB.makeId(cfg.idPrefix||'REC');
-          for (const g of cfg.groups) for (const f of g.fields){
-            if (f.t === 'photo') copy[f.k] = null;
-            if (f.t === 'photos') copy[f.k] = new Array(f.n||2).fill(null);
-          }
-          delete copy.createdAt; delete copy.updatedAt;
-          if (cfg.autoStamp){ copy[cfg.autoStamp.date] = nowDate(); copy[cfg.autoStamp.time] = nowTime(); }
-          await DB.put(cfg.store, copy);
-          rows = await DB.list(cfg.store); await drawList(); await select(copy.id);
-          toast('복제 완료');
-        }}),
-        el('button', { class:'btn danger', text:'삭제', onclick: async () => {
-          const nCuts = entKey === 'scenes' ? (await DB.listCuts(rec.id)).length : 0;
-          const msg = nCuts ? `이 씬과 하위 컷 ${nCuts}개가 함께 삭제됩니다.` : '되돌릴 수 없습니다.';
-          if (!await confirmBox(`${cfg.label} 삭제`, msg, '삭제', true)) return;
-          await DB.del(cfg.store, rec.id);
-          rows = await DB.list(cfg.store);
-          if (entKey === 'scenes') cutIndex = await cutsBySceneMap();
-          S.selected = null; await drawList(); clear(editPane);
-          editPane.appendChild(el('div', { class:'empty', text:'삭제되었습니다.' }));
-          toast('삭제 완료', 'warn');
-        }}),
-      ])
+    const body = el('tbody');
+    const table = el('table', { class:'dtable' }, [
+      el('thead', {}, [ el('tr', {}, [
+        el('th', { class:'c-no', text:'NO' }),
+        el('th', { class:'c-thumb', text:'썸네일' }),
+        ...cols.map(k => el('th', { text: labelOf(entKey, k) })),
+        entKey === 'scenes' ? el('th', { text:'컷 / 테이크' }) : null,
+        el('th', { class:'c-go' }),
+      ])]),
+      body
     ]);
+    tableWrap.appendChild(table);
 
-    const form = await renderForm(rec, cfg.groups, entKey,
-      () => autosave(cfg.store, rec, refreshRow), { project });
+    let i = 0;
+    for (const r of list){
+      i++;
+      const thumb = el('div', { class:'tcell-img' });
+      const tv = r[cfg.thumbField];
+      if (tv && tv.mid){
+        const url = await DB.mediaURL(tv.mid);
+        if (url) thumb.appendChild(el('img', { src:url }));
+      } else thumb.appendChild(el('span', { class:'noimg', text:'NO IMG' }));
 
-    editPane.append(head, form);
+      const tds = cols.map((k, idx) => el('td', {
+        class: idx === 0 ? 'strong' : (r[k] ? '' : 'dim'),
+        text: r[k] || '—'
+      }));
+      if (entKey === 'scenes'){
+        const cs = cutIndex[r.id] || [];
+        const tk = cs.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);
+        tds.push(el('td', { class: cs.length ? '' : 'dim', text: cs.length ? `컷 ${cs.length} · 테이크 ${tk}` : '—' }));
+      }
 
-    // 씬이면 하위 컷 섹션을 붙인다
-    if (entKey === 'scenes'){
-      editPane.appendChild(await cutsSection(rec, refreshRow));
+      body.appendChild(el('tr', {
+        class:'drow', onclick: () => go(`${entKey}/${r.id}`)
+      }, [
+        el('td', { class:'c-no', text:String(i) }),
+        el('td', { class:'c-thumb' }, [thumb]),
+        ...tds,
+        el('td', { class:'c-go', text:'›' }),
+      ]));
     }
-    editPane.scrollTop = 0;
   }
 
-  await drawList();
-  if (S.selected) await select(S.selected);
-  else editPane.appendChild(el('div', { class:'empty', text:`좌측에서 ${cfg.label}을(를) 선택하거나 새로 만드세요.` }));
+  async function addNew(withCapture){
+    const rec = await makeRecord(entKey, cfg, project, rows, withCapture);
+    go(`${entKey}/${rec.id}`);
+  }
+
+  buildFilters();
+  root.appendChild(el('div', { class:'pane single list-page' }, [ head, filterBar, countEl, tableWrap ]));
+  await draw();
+}
+
+/** 새 레코드 생성 (리스트/상세 공용) */
+async function makeRecord(entKey, cfg, project, rows, withCapture){
+  const base = { projectId: project.id };
+  for (const g of cfg.groups) for (const f of g.fields){
+    base[f.k] = (f.t === 'photos') ? new Array(f.n||2).fill(null)
+              : (f.t === 'photo') ? null
+              : (f.t === 'link') ? [] : '';
+  }
+  if (cfg.inherit && rows && rows.length){
+    const last = rows.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
+    if (last) for (const k of cfg.inherit) if (last[k]) base[k] = last[k];
+  }
+  base.id = (entKey === 'scenes') ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix || 'REC');
+  if (cfg.autoStamp){
+    base[cfg.autoStamp.date] = nowDate();
+    base[cfg.autoStamp.time] = nowTime();
+  }
+  if (withCapture){
+    const files = await pickFiles({ capture:true });
+    if (files.length){
+      const p = progress(); p.set('이미지 압축 중', 40);
+      try { base[cfg.thumbField] = await ingest(files[0], 'thumb'); }
+      catch(e){ toast('이미지 처리 실패: '+e.message, 'err'); }
+      finally { p.done(); }
+    }
+  }
+  await DB.put(cfg.store, base);
+  return base;
+}
+
+/* ===================== 엔티티 : 상세 페이지 ===================== */
+
+export async function entityDetailView(root, entKey, id, go){
+  const cfg = ENTITIES[entKey];
+  clear(root);
+  const project = await DB.getProject();
+  const rec = await DB.get(cfg.store, id);
+
+  if (!rec){
+    root.appendChild(el('div', { class:'pane single' }, [
+      el('div', { class:'empty', text:'기록을 찾을 수 없습니다.' }),
+      el('div', { class:'row' }, [ el('button', { class:'btn', text:'← 목록', onclick:()=>go(entKey) }) ])
+    ]));
+    return;
+  }
+
+  const title = cfg.titleFields.map(k => rec[k]).filter(Boolean).join(' · ') || `(${cfg.labelKo} 미입력)`;
+
+  const head = el('header', { class:'detail-head' }, [
+    el('button', { class:'btn ghost', text:'← 목록', onclick: async () => { await flushAll(); go(entKey); } }),
+    el('div', { class:'detail-title' }, [
+      el('div', { class:'eyebrow', text:`${(project.name || 'PROJECT').toUpperCase()} ONSET DATABASE` }),
+      el('h2', { text: `${cfg.labelKo} 입력` }),
+      el('div', { class:'idline' }, [
+        el('code', { text: rec.id }),
+        el('span', { id:'saveDot', class:'savedot', title:'자동 저장됨' }),
+      ]),
+      el('div', { class:'dim tiny', text: title }),
+    ]),
+    el('div', { class:'row gap' }, [
+      el('button', { class:'btn ghost', text:'복제', onclick: async () => {
+        const copy = JSON.parse(JSON.stringify(rec));
+        copy.id = entKey === 'scenes' ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix||'REC');
+        for (const g of cfg.groups) for (const f of g.fields){
+          if (f.t === 'photo') copy[f.k] = null;
+          if (f.t === 'photos') copy[f.k] = new Array(f.n||2).fill(null);
+        }
+        delete copy.createdAt; delete copy.updatedAt;
+        if (cfg.autoStamp){ copy[cfg.autoStamp.date] = nowDate(); copy[cfg.autoStamp.time] = nowTime(); }
+        await DB.put(cfg.store, copy);
+        toast('복제 완료'); go(`${entKey}/${copy.id}`);
+      }}),
+      el('button', { class:'btn danger', text:'삭제', onclick: async () => {
+        const nCuts = entKey === 'scenes' ? (await DB.listCuts(rec.id)).length : 0;
+        const msg = nCuts ? `이 씬과 하위 컷 ${nCuts}개가 함께 삭제됩니다.` : '되돌릴 수 없습니다.';
+        if (!await confirmBox(`${cfg.labelKo} 삭제`, msg, '삭제', true)) return;
+        await DB.del(cfg.store, rec.id);
+        toast('삭제 완료', 'warn'); go(entKey);
+      }}),
+    ])
+  ]);
+
+  const form = await renderForm(rec, cfg.groups, entKey,
+    () => autosave(cfg.store, rec), { project });
+
+  const pane = el('div', { class:'pane single detail-page' }, [ head, form ]);
+  root.appendChild(pane);
+
+  if (entKey === 'scenes') pane.appendChild(await cutsSection(rec, null));
+  pane.scrollTop = 0;
 }
 
 /* ===================== 모니터 사진 OCR ===================== */

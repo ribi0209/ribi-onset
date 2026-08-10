@@ -5,25 +5,31 @@
 import * as DB from './db.js';
 import { NAV, ENTITY_ROUTES } from './schema.js';
 import { el, $, clear, toast, setRefsCache } from './ui.js';
-import { entityView, projectView, overviewView, settingsView, backupView } from './views.js';
+import { entityListView, entityDetailView, projectView, overviewView, settingsView, backupView } from './views.js';
 
+/** '#/locations/LOC-1234' → { k:'locations', id:'LOC-1234' } */
 function currentRoute(){
-  const h = (location.hash || '#/overview').replace(/^#\//,'');
-  return NAV.some(r => r.k === h) ? h : 'overview';
+  const raw = (location.hash || '#/overview').replace(/^#\//,'');
+  const [k, ...rest] = raw.split('/');
+  const id = rest.join('/') || null;
+  return NAV.some(r => r.k === k) ? { k, id } : { k:'overview', id:null };
 }
-function go(k){ location.hash = '#/' + k; }
+function go(path){ location.hash = '#/' + path; }
 
 async function render(){
-  const k = currentRoute();
+  const { k, id } = currentRoute();
   for (const b of document.querySelectorAll('.nav-btn')) b.classList.toggle('on', b.dataset.k === k);
   const main = $('#main');
   main.dataset.route = k;
+  main.scrollTop = 0;
 
   if (k === 'project')  return projectView(main, () => boot(true));
   if (k === 'overview') return overviewView(main, go);
   if (k === 'settings') return settingsView(main);
   if (k === 'backup')   return backupView(main, () => boot(true));
-  if (ENTITY_ROUTES.includes(k)) return entityView(main, k);
+  if (ENTITY_ROUTES.includes(k)){
+    return id ? entityDetailView(main, k, id, go) : entityListView(main, k, go);
+  }
   return overviewView(main, go);
 }
 

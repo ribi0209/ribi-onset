@@ -52,12 +52,36 @@ ok(!!main.querySelector('.photo-tile img'), '포스터가 이미 있으면 이�
 ev(segBtns[0]); await wait(700);
 ok((await DB.getProject()).type==='영화', '세그먼트 클릭 → 저장');
 
-console.log('== Scene List → 컷 → 테이크 ==');
-await V.entityView(main,'scenes'); await wait(250);
-const rec1 = main.querySelector('.reclist .rec');
-ok(!!rec1, '씬 리스트 렌더');
-ok(main.querySelector('.rec .tag.t-cut')!==null, '리스트에 컷 수 뱃지 표시');
-ev(rec1); await wait(400);
+console.log('== 리스트 페이지 (표) ==');
+let routed = null; const go = (p)=>{ routed = p; };
+await V.entityListView(main,'scenes',go); await wait(300);
+ok(!main.querySelector('.split'), '좌우 분할 레이아웃 제거됨');
+ok(!!main.querySelector('.page-head'), '페이지 헤더');
+ok(!!main.querySelector('.eyebrow'), '섹션 번호 eyebrow');
+ok(!!main.querySelector('table.dtable'), '표 형태 리스트');
+const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
+ok(ths[0]==='NO' && ths[1]==='썸네일', `표 헤더 시작 ${ths.slice(0,2).join(' / ')}`);
+ok(ths.includes('컷 / 테이크'), '씬 표에 컷/테이크 열');
+const drows = main.querySelectorAll('tr.drow');
+ok(drows.length===2, `데이터 행 ${drows.length}개`);
+ok(!!main.querySelector('.tcell-img'), '썸네일 셀');
+ok(main.querySelector('tr.drow .c-go').textContent==='›', '행마다 진입 화살표');
+
+// 행 클릭 → 상세로 라우팅
+ev(drows[0]); await wait(100);
+ok(/^scenes\/[A-Za-z0-9-]+$/.test(routed||''), `행 클릭 → 상세 경로 (${routed})`);
+const detailId = routed.split('/')[1];
+
+console.log('== 상세 페이지 ==');
+await V.entityDetailView(main,'scenes',detailId,go); await wait(400);
+ok(!!main.querySelector('.detail-page'), '상세 페이지 렌더');
+const backBtn = Array.from(main.querySelectorAll('button')).find(b=>b.textContent==='← 목록');
+ok(!!backBtn, '← 목록 버튼');
+ok(!!main.querySelector('.detail-head .idline code'), '상세에 ID 표시');
+ok(Array.from(main.querySelectorAll('button')).some(b=>b.textContent==='삭제'), '삭제 버튼');
+routed = null; ev(backBtn); await wait(150);
+ok(routed==='scenes', `← 목록 → 리스트로 복귀 (${routed})`);
+await V.entityDetailView(main,'scenes',detailId,go); await wait(400);
 ok(!!main.querySelector('.cuts-sec'), '씬 에디터에 CUTS 섹션');
 const cutCards = main.querySelectorAll('.cut-card');
 ok(cutCards.length===1, `기존 컷 카드 ${cutCards.length}개`);
@@ -67,7 +91,7 @@ ok(shotBtns[0].textContent.includes('촬영') && shotBtns[1].textContent.include
 
 const addCutBtn = Array.from(main.querySelectorAll('.cuts-sec button')).find(b=>b.textContent==='+ 컷');
 ok(!!addCutBtn, '+ 컷 버튼');
-const sceneId = main.querySelector('.edit-head code').textContent;
+const sceneId = main.querySelector('.detail-head .idline code').textContent;
 ev(addCutBtn); await wait(500);
 const cutsNow = await DB.listCuts(sceneId);
 ok(cutsNow.length===2, `컷 추가 1→2 (${cutsNow.length})`);
@@ -123,21 +147,42 @@ console.log('== 새 기본값 / 조건부 필드 ==');
 }
 { // 영화로 바꾸면 에피소드 입력란이 사라진다
   const p = await DB.getProject(); p.type='드라마'; await DB.setProject(p);
-  await V.entityView(main,'scenes'); await wait(200);
-  ev(main.querySelector('.reclist .rec')); await wait(300);
-  ok(!!main.querySelector('.edit-pane input[list="dl-episodes"]'), '드라마 → 에피소드 입력란 있음');
+  const one = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main,'scenes',one.id,()=>{}); await wait(300);
+  ok(!!main.querySelector('input[list="dl-episodes"]'), '드라마 → 에피소드 입력란 있음');
   ok(!main.textContent.includes('상태'), '씬 폼에서 상태 제거');
+  await V.entityListView(main,'scenes',()=>{}); await wait(200);
+  ok(Array.from(main.querySelectorAll('.dtable thead th')).some(t=>t.textContent==='에피소드'), '드라마 → 표에 에피소드 열');
   const p2 = await DB.getProject(); p2.type='영화'; await DB.setProject(p2);
-  await V.entityView(main,'scenes'); await wait(200);
-  ev(main.querySelector('.reclist .rec')); await wait(300);
-  ok(!main.querySelector('.edit-pane input[list="dl-episodes"]'), '영화 → 에피소드 입력란 숨김');
+  await V.entityDetailView(main,'scenes',one.id,()=>{}); await wait(300);
+  ok(!main.querySelector('input[list="dl-episodes"]'), '영화 → 에피소드 입력란 숨김');
+  await V.entityListView(main,'scenes',()=>{}); await wait(200);
+  ok(!Array.from(main.querySelectorAll('.dtable thead th')).some(t=>t.textContent==='에피소드'), '영화 → 표에서도 에피소드 열 숨김');
   const p3 = await DB.getProject(); p3.type='드라마'; await DB.setProject(p3);
 }
 
-console.log('== 나머지 화면 ==');
+console.log('== 나머지 엔티티 (리스트 + 상세) ==');
 for (const k of ['locations','assets','cameras','hdri']){
-  await V.entityView(main,k); await wait(150);
-  ok(!!main.querySelector('.split'), `${k} 렌더`);
+  await V.entityListView(main,k,go); await wait(200);
+  ok(!!main.querySelector('.page-head h1'), `${k} 리스트 헤더: ${main.querySelector('.page-head h1').textContent}`);
+  ok(!main.querySelector('.split'), `${k}: 분할 레이아웃 아님`);
+  const rs = await DB.list(k);
+  if (rs.length){
+    ok(main.querySelectorAll('tr.drow').length===rs.length, `${k} 행 ${rs.length}개`);
+    await V.entityDetailView(main,k,rs[0].id,go); await wait(250);
+    ok(!!main.querySelector('.detail-page .fgroup'), `${k} 상세 폼 렌더`);
+  } else {
+    ok(!!main.querySelector('.empty'), `${k}: 빈 목록 안내`);
+  }
+}
+{ // 리스트에서 추가 → 새 레코드 상세로 이동
+  await V.entityListView(main,'locations',go); await wait(200);
+  const before = (await DB.list('locations')).length;
+  const addBtn = Array.from(main.querySelectorAll('.page-head button')).find(b=>b.textContent.startsWith('+ '));
+  ok(!!addBtn, `추가 버튼: ${addBtn && addBtn.textContent}`);
+  routed = null; ev(addBtn); await wait(400);
+  ok((await DB.list('locations')).length===before+1, '레코드 생성됨');
+  ok(/^locations\//.test(routed||''), `생성 후 상세로 이동 (${routed})`);
 }
 await V.settingsView(main); await wait(150);
 ok(main.querySelectorAll('.ref-card').length>=40, `Setting 레퍼런스 카드 ${main.querySelectorAll('.ref-card').length}개`);

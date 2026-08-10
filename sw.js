@@ -8,7 +8,7 @@
  * 코드를 수정한 뒤에는 SHELL_VER 만 올리면 된다.
  * 데이터는 IndexedDB 에 있으므로 캐시와 무관하다.
  */
-const SHELL_VER   = 'ribi-onset-v6';
+const SHELL_VER   = 'ribi-onset-v7';
 const ASSET_CACHE = 'ribi-onset-assets';
 
 const SHELL = [

@@ -368,3 +368,71 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
   background:var(--bg); border:1px solid var(--line); border-radius:8px;
   font-size:11px; line-height:1.5; white-space:pre-wrap; color:var(--dim);
 }
+
+/* =====================================================================
+ * 리스트 페이지 / 상세 페이지 (좌우 분할 → 전체폭 전환)
+ * ===================================================================== */
+
+#main{ overflow:auto; }
+.pane.single.list-page, .pane.single.detail-page{ height:auto; padding-bottom:60px; }
+
+/* ---------- 페이지 헤더 ---------- */
+.page-head{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:16px; flex-wrap:wrap; margin:6px 0 18px;
+}
+.page-head h1{ margin:2px 0 4px; font-size:26px; letter-spacing:-.3px; }
+.page-head p{ margin:0; font-size:13px; }
+.eyebrow{
+  font-size:11px; font-weight:800; letter-spacing:1.4px;
+  color:var(--accent); text-transform:uppercase;
+}
+
+/* ---------- 데이터 표 ---------- */
+.table-wrap{
+  overflow-x:auto; border-radius:12px; border:1px solid var(--line);
+  background:var(--bg2); box-shadow:var(--shadow);
+}
+.dtable{ width:100%; border-collapse:collapse; min-width:760px; }
+.dtable thead th{
+  position:sticky; top:0; z-index:2;
+  background:var(--bg3); color:var(--dim);
+  font-size:11px; font-weight:800; letter-spacing:.7px; text-transform:uppercase;
+  text-align:left; padding:12px 14px; white-space:nowrap;
+  border-bottom:1px solid var(--line);
+}
+.dtable td{ padding:10px 14px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:middle; }
+.dtable tbody tr:last-child td{ border-bottom:none; }
+.dtable td.strong{ font-weight:700; }
+.dtable td.dim{ color:var(--dim); }
+.drow{ cursor:pointer; }
+.drow:hover td{ background:var(--bg3); }
+.drow:active td{ background:var(--accent2); }
+.c-no{ width:52px; color:var(--dim); font-size:12px; }
+.c-thumb{ width:104px; }
+.c-go{ width:40px; text-align:right; color:var(--dim); font-size:20px; }
+.tcell-img{
+  width:86px; height:58px; border-radius:7px; overflow:hidden; background:var(--bg);
+  display:flex; align-items:center; justify-content:center; border:1px solid var(--line);
+}
+.tcell-img img{ width:100%; height:100%; object-fit:cover; }
+.noimg{ font-size:9px; color:var(--dim); letter-spacing:.5px; }
+
+.list-page .filterbar{ margin-bottom:8px; align-items:center; }
+.list-page .inp.search{ width:auto; min-width:220px; flex:1; max-width:340px; min-height:34px; font-size:13px; }
+.list-page .count{ margin:0 0 8px 2px; }
+
+/* ---------- 상세 페이지 ---------- */
+.detail-head{
+  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+  position:sticky; top:0; z-index:6; background:var(--bg);
+  padding:10px 0 12px; margin-bottom:10px; border-bottom:1px solid var(--line);
+}
+.detail-title{ flex:1; text-align:center; min-width:0; }
+.detail-title h2{ margin:2px 0 4px; font-size:20px; }
+.detail-title .idline{ justify-content:center; }
+.detail-page .fgroup{
+  background:var(--bg2); border:1px solid var(--line); border-radius:12px;
+  padding:14px 16px; margin-bottom:14px;
+}
+.detail-page .cuts-sec{ margin-top:6px; }
