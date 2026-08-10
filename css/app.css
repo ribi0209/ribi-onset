@@ -438,6 +438,16 @@ select.inp.cell{ background-position:calc(100% - 11px) 14px, calc(100% - 6px) 14
 .detail-page .cuts-sec{ margin-top:6px; }
 
 /* ---------- S펜 스케치 ---------- */
+.sk-swatches{ display:inline-flex; gap:5px; align-items:center; }
+.sk-color{
+  width:28px; height:28px; border-radius:50%; cursor:pointer;
+  border:2px solid var(--line); padding:0;
+}
+.sk-color.on{ border-color:var(--fg); box-shadow:0 0 0 2px var(--bg2), 0 0 0 4px var(--accent); }
+.sk-sep{ width:1px; height:22px; background:var(--line); margin:0 3px; }
+.btn.tiny.sk-size{ min-width:34px; display:inline-flex; align-items:center; justify-content:center; }
+.sk-dot{ display:block; border-radius:50%; background:currentColor; }
+.btn.sk-size.on, .btn.sk-mode.on{ background:var(--accent); border-color:var(--accent); color:#fff; }
 .sketch{ border:1px solid var(--line); border-radius:11px; overflow:hidden; background:var(--bg2); }
 .sketch-bar{
   display:flex; align-items:center; gap:6px; padding:7px 9px;

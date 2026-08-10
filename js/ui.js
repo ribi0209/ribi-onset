@@ -174,6 +174,15 @@ export function miniField(f, rec, onDirty){
 
 /* ---------------- S펜 필기 캔버스 ---------------- */
 
+/** 필기 색상 팔레트. sketch 타입 필드는 전부 이걸 공유한다. */
+export const PEN_COLORS = [
+  { n:'검정', v:'#111418' },
+  { n:'빨강', v:'#e5484d' },
+  { n:'파랑', v:'#3b82f6' },
+  { n:'초록', v:'#1a9c5b' },
+  { n:'주황', v:'#f5a524' },
+];
+
 /**
  * 손으로 그린 메모를 PNG 로 저장한다.
  *  - S펜(pointerType 'pen')은 필압을 선 굵기에 반영한다.
@@ -188,16 +197,14 @@ export function sketchPad(getVal, setVal, onDirty){
   const ctx = canvas.getContext('2d', { willReadFrequently:false });
 
   let penSeen = false, drawing = false, dirty = false, saveTimer = null;
-  let mode = 'pen', size = 3;
+  let mode = 'pen', size = 4;
+  let color = localStorage.getItem('ribi-pen-color') || PEN_COLORS[0].v;
   const undo = [];
 
   function paintBg(){
+    // 괘선 없는 백지. 지우개가 흰색으로 덮어쓰므로 배경도 흰색이어야 자국이 안 남는다.
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, W, H);
-    ctx.strokeStyle = '#e6ebf2'; ctx.lineWidth = 1;
-    for (let y = 40; y < H; y += 40){
-      ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); ctx.stroke();
-    }
   }
   paintBg();
 
@@ -236,7 +243,7 @@ export function sketchPad(getVal, setVal, onDirty){
     canvas.setPointerCapture(e.pointerId);
     const { x, y } = pos(e);
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.strokeStyle = mode === 'eraser' ? '#ffffff' : '#111418';
+    ctx.strokeStyle = mode === 'eraser' ? '#ffffff' : color;
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 0.1, y);
     ctx.lineWidth = lineWidth(e); ctx.stroke();
   }
@@ -276,25 +283,50 @@ export function sketchPad(getVal, setVal, onDirty){
   canvas.addEventListener('pointerleave', up);
 
   const status = el('span', { class:'dim tiny' });
+
+  function selectTool(btn, group){
+    wrap.querySelectorAll('.' + group).forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+
+  // --- 색상 ---
+  const swatches = PEN_COLORS.map(c => {
+    const b = el('button', {
+      class:'sk-color' + (c.v === color ? ' on' : ''),
+      style:`background:${c.v}`, title:c.n,
+      onclick:(e) => {
+        color = c.v; mode = 'pen';
+        localStorage.setItem('ribi-pen-color', color);
+        selectTool(e.currentTarget, 'sk-color');
+        wrap.querySelectorAll('.sk-mode').forEach(x => x.classList.remove('on'));
+        penBtn.classList.add('on');
+      }
+    });
+    return b;
+  });
+
+  // --- 굵기 ---
   const sizeBtns = [2, 4, 8].map(n => el('button', {
-    class:'btn tiny' + (n === 3 ? '' : ' ghost'), text:'●'.padEnd(1),
-    style:`font-size:${8 + n}px`, title:`굵기 ${n}`,
-    onclick:(e) => {
-      size = n; mode = 'pen';
-      wrap.querySelectorAll('.sk-tool').forEach(b => b.classList.add('ghost'));
-      e.currentTarget.classList.remove('ghost');
-    }
-  }));
-  sizeBtns.forEach(b => b.classList.add('sk-tool'));
-  sizeBtns[1].classList.remove('ghost');
+    class:'btn tiny sk-size' + (n === size ? ' on' : ''), title:`굵기 ${n}`,
+    onclick:(e) => { size = n; selectTool(e.currentTarget, 'sk-size'); }
+  }, [ el('i', { class:'sk-dot', style:`width:${n+2}px;height:${n+2}px` }) ]));
+
+  // --- 펜 / 지우개 ---
+  const penBtn = el('button', {
+    class:'btn tiny sk-mode on', text:'펜',
+    onclick:(e) => { mode = 'pen'; selectTool(e.currentTarget, 'sk-mode'); }
+  });
+  const eraserBtn = el('button', {
+    class:'btn tiny sk-mode', text:'지우개',
+    onclick:(e) => { mode = 'eraser'; selectTool(e.currentTarget, 'sk-mode'); }
+  });
 
   const bar = el('div', { class:'sketch-bar' }, [
+    el('span', { class:'sk-swatches' }, swatches),
+    el('span', { class:'sk-sep' }),
     ...sizeBtns,
-    el('button', { class:'btn tiny ghost sk-tool', text:'지우개', onclick:(e) => {
-      mode = 'eraser';
-      wrap.querySelectorAll('.sk-tool').forEach(b => b.classList.add('ghost'));
-      e.currentTarget.classList.remove('ghost');
-    }}),
+    el('span', { class:'sk-sep' }),
+    penBtn, eraserBtn,
     el('button', { class:'btn tiny ghost', text:'되돌리기', onclick: () => {
       const prev = undo.pop();
       if (!prev) return;

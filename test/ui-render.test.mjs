@@ -176,7 +176,14 @@ console.log('== 로케이션 개편 ==');
   const g0 = L.groups[0].fields.map(f=>f.k);
   ok(JSON.stringify(g0)===JSON.stringify(['thumbnail','mainLocation','subLocation','setId','setType','intExt','path']),
      `기본정보 순서 ${g0.join(' → ')}`);
-  ok(L.groups[0].fields.find(f=>f.k==='path').full===true, '주소는 전체폭');
+  ok(L.groups[0].cols===6, `기본정보 고정 ${L.groups[0].cols}열`);
+  const sp = Object.fromEntries(L.groups[0].fields.map(f=>[f.k, f.span]));
+  // 6열 기준: 1행 썸(1)+대장소(2)+소장소(2)+SETID(1)=6 / 2행 세트타입(2)+INT-EXT(2) / 3행 주소(5)
+  ok(sp.thumbnail===1 && sp.mainLocation===2 && sp.subLocation===2 && sp.setId===1,
+     `1행 합계 ${sp.thumbnail+sp.mainLocation+sp.subLocation+sp.setId}칸 = 6`);
+  ok(sp.setType===2 && sp.intExt===2, '2행: 세트 타입 + INT/EXT');
+  ok(sp.path===5, `3행: 주소 ${sp.path}칸 (썸네일 옆 전체)`);
+  ok(L.groups[0].fields.find(f=>f.k==='thumbnail').rowSpan===3, '썸네일이 3행 관통');
   ok(!L.groups.some(g=>g.fields.some(f=>f.k==='shootLocation')), '촬영장소 필드 제거');
   const sk = L.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');
   ok(!!sk, `S펜 스케치 필드 추가 (${sk && sk.label})`);
@@ -189,8 +196,32 @@ console.log('== 로케이션 개편 ==');
 
   const loc = (await DB.list('locations'))[0];
   await V.entityDetailView(main,'locations',loc.id,()=>{}); await wait(350);
+  const g = main.querySelector('.grid.fixed');
+  ok(!!g, '고정 격자 렌더');
+  ok(g.getAttribute('style').includes('--cols:6'), `열 수 지정 (${g.getAttribute('style')})`);
+  const st = k => main.querySelector('.grid.fixed').children;
+  const cells = Array.from(g.children);
+  ok(cells[1].getAttribute('style')==='grid-column:span 2', `대장소 span (${cells[1].getAttribute('style')})`);
+  ok(cells[0].getAttribute('style').includes('grid-row:span 3'), `썸네일 rowSpan (${cells[0].getAttribute('style')})`);
+  ok(cells[6].getAttribute('style')==='grid-column:span 5', `주소 span (${cells[6].getAttribute('style')})`);
   ok(!!main.querySelector('.sketch canvas'), '상세에 스케치 캔버스 렌더');
-  ok(main.querySelectorAll('.sketch-bar button').length>=5, '스케치 도구 버튼');
+  const { PEN_COLORS } = await import('../js/ui.js');
+  const sw = main.querySelectorAll('.sk-color');
+  ok(sw.length===PEN_COLORS.length && sw.length===5, `색상 스와치 ${sw.length}개`);
+  ok(sw[0].classList.contains('on'), '기본 색상 선택 표시');
+  ok(sw[1].getAttribute('style').includes(PEN_COLORS[1].v), `2번째 = ${PEN_COLORS[1].n} ${PEN_COLORS[1].v}`);
+  ev(sw[2]); await wait(80);
+  ok(sw[2].classList.contains('on') && !sw[0].classList.contains('on'), '색상 선택 전환');
+  ok(w.localStorage.getItem('ribi-pen-color')===PEN_COLORS[2].v, '선택한 색상 기억');
+  ok(main.querySelectorAll('.sk-size').length===3, '굵기 3단계');
+  ok(main.querySelectorAll('.sk-mode').length===2, '펜 / 지우개');
+  const eraser = Array.from(main.querySelectorAll('.sk-mode')).find(b=>b.textContent==='지우개');
+  ev(eraser); await wait(60);
+  ok(eraser.classList.contains('on'), '지우개 선택 표시');
+  ev(sw[0]); await wait(60);
+  ok(!eraser.classList.contains('on'), '색을 고르면 펜 모드로 복귀');
+  const { sketchPad } = await import('../js/ui.js');
+  ok(typeof sketchPad === 'function', 'sketchPad 공용 위젯 export');
   const tiles = main.querySelectorAll('.photo-grid');
   ok(tiles.length===2, `사진 그리드 2개 (${tiles.length})`);
   ok(tiles[0].children.length===6 && tiles[1].children.length===8,
