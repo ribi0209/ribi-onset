@@ -88,85 +88,37 @@ console.log('== 씬 생성 → 상세 진입 ==');
   ok(main.textContent.includes('로케이션'), '로케이션 필드 존재');
   ok(main.textContent.includes('시제'), '시제 필드 존재');
   ok(main.textContent.includes('벤더'), '벤더 필드 존재');
-  ok(main.textContent.includes('캠 유닛'), '캠 유닛 필드 존재');
+  ok(main.textContent.includes('촬영 유닛'), '촬영 유닛 필드 존재');
+  ok(main.textContent.includes('캠 롤') && main.textContent.includes('클립'), '캠 롤 / 클립 필드 존재');
   ok(!!main.querySelector('.sketch-cv'), 'S펜 캔버스 존재');
   ok(main.querySelectorAll('.photo-grid .photo-tile').length >= 14, '현장 사진 14칸');
+  ok(main.querySelectorAll('.cam-tab').length === 4, '캠 탭 A~D');
+  ok(!main.querySelector('.cuts-sec'), 'CUTS 섹션 없음');
 }
 
-console.log('== 컷: A/B캠 동시 촬영 ==');
+console.log('== 캠 탭 전환 ==');
 {
   const main = w.document.getElementById('main');
-  const abBtn = Array.from(main.querySelectorAll('button')).find(b => b.textContent.includes('A/B캠 동시'));
-  ok(!!abBtn, 'A/B캠 동시 버튼 존재');
-  abBtn.dispatchEvent(new w.Event('click', { bubbles:true }));
-  await wait(300);
-
   const scene = (await DB.list('scenes'))[0];
-  const cuts = await DB.listCuts(scene.id);
-  ok(cuts.length === 2, `컷 2개 생성 (${cuts.length})`);
-  ok(cuts[0].camUnit === 'A' && cuts[1].camUnit === 'B', `캠 A / B (${cuts.map(c=>c.camUnit).join(',')})`);
-  ok(cuts[0].cutNo === cuts[1].cutNo, `같은 컷 번호 (${cuts[0].cutNo})`);
-  ok(cuts[0].slate && cuts[0].slate === cuts[1].slate, `슬레이트 공유 (${cuts[0].slate})`);
-  ok(cuts[0].id !== cuts[1].id, '별개의 레코드 = 별개의 VFX 물량');
 
-  // 한 번 더 누르면 컷 번호가 올라가야 한다 (개수 기준으로 세면 2 를 건너뛴다)
-  const abBtn2 = Array.from(main.querySelectorAll('button')).find(b => b.textContent.includes('A/B캠 동시'));
-  abBtn2.dispatchEvent(new w.Event('click', { bubbles:true }));
+  const tabs = main.querySelectorAll('.cam-tab');
+  ok(tabs[0].classList.contains('on'), '기본 선택은 A');
+  ok(!tabs[1].classList.contains('on'), 'B 는 비선택');
+
+  // 새로 만든 씬은 cams 골격이 미리 있어야 한다 (탭 전환 시 undefined 접근 방지)
+  ok(scene.cams && ['A','B','C','D'].every(c => scene.cams[c]), '생성 시 cams A~D 초기화');
+
+  // 값이 있는 캠은 탭에 표시된다
+  scene.cams.C.camRoll = 'C012';
+  scene.cams.C.clip = 'C099';
+  await DB.put('scenes', scene.id ? scene : scene);
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
   await wait(300);
-  const cuts2 = await DB.listCuts(scene.id);
-  const nos = Array.from(new Set(cuts2.map(c=>c.cutNo))).sort();
-  ok(cuts2.length === 4, `컷 4개 (${cuts2.length})`);
-  ok(nos.join(',') === '1,2', `컷 번호가 1,2 로 증가 (${nos.join(',')})`);
-}
-
-console.log('== 모니터 촬영 → 어느 컷에 넣을지 판단 ==');
-{
-  const { planMonitorTake } = await import('../js/schema.js');
-
-  // 아직 컷이 없는 상태 — B027 을 찍었다
-  {
-    const { targets, defaultTarget } = planMonitorTake([], 'B');
-    ok(defaultTarget === '__new', '컷이 없으면 새 컷이 기본값');
-    ok(targets.length === 1 && targets[0].label.includes('B캠'), `후보 1개 (${targets[0].label})`);
-  }
-
-  // A캠 C1 만 있는 상태에서 B027 을 찍었다 → "C1 과 동시" 가 기본값이어야 한다
-  {
-    const cuts = [{ id:'CUT-A1', cutNo:'1', camUnit:'A', slate:'1-1' }];
-    const { targets, defaultTarget } = planMonitorTake(cuts, 'B');
-    ok(defaultTarget === 'pair:CUT-A1', `A캠 C1 이 있으면 동시 촬영이 기본값 (${defaultTarget})`);
-    ok(targets[0].label.includes('동시'), `첫 후보 = ${targets[0].label}`);
-    ok(targets.some(t => t.value === '__new'), '새 컷 만들기도 선택 가능');
-  }
-
-  // A/B 짝이 이미 있는 상태에서 B027 을 또 찍었다 → 그 B캠 컷에 테이크 추가가 기본값
-  {
-    const cuts = [
-      { id:'CUT-A1', cutNo:'1', camUnit:'A', slate:'1-1' },
-      { id:'CUT-B1', cutNo:'1', camUnit:'B', slate:'1-1' },
-    ];
-    const { targets, defaultTarget } = planMonitorTake(cuts, 'B');
-    ok(defaultTarget === 'CUT-B1', `이어 찍으면 같은 B캠 컷에 추가 (${defaultTarget})`);
-    ok(!targets.some(t => t.value === 'pair:CUT-A1'), '이미 짝이 있으면 동시 생성 후보를 만들지 않음');
-  }
-
-  // 같은 캠 컷이 여러 개면 마지막 것이 기본값
-  {
-    const cuts = [
-      { id:'CUT-B1', cutNo:'1', camUnit:'B' },
-      { id:'CUT-B2', cutNo:'2', camUnit:'B' },
-    ];
-    const { defaultTarget } = planMonitorTake(cuts, 'B');
-    ok(defaultTarget === 'CUT-B2', `가장 최근 컷이 기본값 (${defaultTarget})`);
-  }
-
-  // 캠 롤을 못 읽었을 때 — 억지로 캠을 정하지 않고 기존 컷 중에서 고르게 한다
-  {
-    const cuts = [{ id:'CUT-A1', cutNo:'1', camUnit:'A' }];
-    const { targets, defaultTarget } = planMonitorTake(cuts, '');
-    ok(defaultTarget === 'CUT-A1', '판독 실패 시 마지막 컷이 기본값');
-    ok(!targets.some(t => String(t.value).startsWith('pair:')), '캠을 모르면 동시 촬영 후보를 만들지 않음');
-  }
+  const tabs2 = main.querySelectorAll('.cam-tab');
+  ok(tabs2[2].classList.contains('on'), '값이 있는 캠이 기본 선택 (C)');
+  ok(tabs2[2].classList.contains('filled'), '값이 있는 탭은 filled 표시');
+  ok(tabs2[2].querySelector('.cam-sub').textContent === 'C012 C099',
+     `탭에 캠 롤·클립 요약 (${tabs2[2].querySelector('.cam-sub').textContent})`);
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

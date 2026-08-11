@@ -45,7 +45,7 @@ console.log('== v2 DB 준비 완료 (씬 3건, VFX 정보 2건) ==');
 
 const DB = await import('../js/db.js');
 const db = await DB.open();
-ok(db.version===6, `DB 버전 ${db.version} → 6`);
+ok(db.version===7, `DB 버전 ${db.version} → 7`);
 ok(db.objectStoreNames.contains('projects'), 'projects 스토어 생성');
 ok(db.objectStoreNames.contains('cuts'), 'cuts 스토어 생성');
 
@@ -121,6 +121,43 @@ console.log('== v5 → v6 : 씬 로케이션을 Location 레코드에 연결 =='
   ok(!('linkedScene' in h), 'HDRI 의 정방향 씬 연결 제거 (이제 역방향 표시)');
   ok(Array.isArray(a.linkedHdriIds) && a.linkedHdriIds.includes('HDR-1'),
      `씬에 연결 HDRI 심어짐 (${JSON.stringify(a.linkedHdriIds)})`);
+}
+
+console.log('== v6 → v7 : 씬 + 캠(A~D) 탭 구조로 이관 ==');
+{
+  const sc = await DB.list('scenes');
+  const a = sc.find(s=>s.id==='PMT-20260801-101010-AAAA');
+
+  ok(a.cams && ['A','B','C','D'].every(c => a.cams[c]), '모든 씬에 cams A~D 생성');
+  ok(!('thumbnail' in a), '씬 최상단 대표 이미지는 캠 밑으로 이동');
+
+  // 컷에 남아 있던 캠 롤·클립이 해당 캠으로 올라와야 한다
+  const cuts = await DB.list('cuts');
+  const c1 = cuts.find(c=>c.sceneId===a.id);
+  ok(!!c1, '컷 레코드는 지우지 않고 보존');
+
+  // 캠 롤이 있는 컷을 만들어 두고 다시 이관시켜 본다
+  const s2 = sc.find(s=>s.id==='PMT-20260801-101011-BBBB');
+  delete s2.cams;
+  await DB.put('scenes', s2);
+  const cut2 = cuts.find(c=>c.sceneId===s2.id);
+  cut2.camUnit = 'B';
+  cut2.takes = [{ takeNo:'1', camRoll:'B027', clip:'C001' }];
+  await DB.put('cuts', cut2);
+
+  const moved = await DB.migrateSceneCams();
+  ok(moved === 1, `cams 가 없는 씬만 이관 (${moved}건)`);
+  const s2b = await DB.get('scenes', s2.id);
+  ok(s2b.cams.B.camRoll === 'B027' && s2b.cams.B.clip === 'C001',
+     `컷의 캠 롤·클립이 B캠으로 (${s2b.cams.B.camRoll} ${s2b.cams.B.clip})`);
+  ok(!s2b.cams.A.camRoll, 'A캠은 비어 있음');
+
+  // 두 번 돌려도 기존 값을 덮지 않는다
+  s2b.cams.B.camRoll = '손으로 고침';
+  await DB.put('scenes', s2b);
+  await DB.migrateSceneCams();
+  const s2c = await DB.get('scenes', s2.id);
+  ok(s2c.cams.B.camRoll === '손으로 고침', '이미 cams 가 있으면 다시 덮어쓰지 않음');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

@@ -6,7 +6,7 @@
 import * as DB from './db.js';
 import {
   ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD,
-  fieldMap, labelOf, displayName, cutLabel, planMonitorTake
+  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, usedCams
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -51,10 +51,6 @@ export async function entityListView(root, entKey, go){
 
   const project = await DB.getProject();
   const rows = await DB.list(cfg.store);
-  const cutIndex = {};
-  if (entKey === 'scenes'){
-    for (const c of await DB.list('cuts')) (cutIndex[c.sceneId] = cutIndex[c.sceneId] || []).push(c);
-  }
 
   const navNo = String(NAV.findIndex(n => n.k === entKey) + 1).padStart(2,'0');
 
@@ -154,7 +150,7 @@ export async function entityListView(root, entKey, go){
         el('th', { class:'c-no', text:'NO' }),
         el('th', { class:'c-thumb', text:'썸네일' }),
         ...cols.map(k => el('th', { text: labelOf(entKey, k) })),
-        entKey === 'scenes' ? el('th', { text:'컷 / 테이크' }) : null,
+        cfg.cams ? el('th', { text:'캠 기록' }) : null,
         el('th', { class:'c-go' }),
       ])]),
       body
@@ -165,7 +161,7 @@ export async function entityListView(root, entKey, go){
     for (const r of list){
       i++;
       const thumb = el('div', { class:'tcell-img' });
-      const tv = r[cfg.thumbField];
+      const tv = thumbOf(entKey, r);
       if (tv && tv.mid){
         const url = await DB.mediaURL(tv.mid);
         if (url) thumb.appendChild(el('img', { src:url }));
@@ -175,10 +171,9 @@ export async function entityListView(root, entKey, go){
         const txt = cellText(r, k);
         return el('td', { class: idx === 0 ? 'strong' : (txt ? '' : 'dim'), text: txt || '—' });
       });
-      if (entKey === 'scenes'){
-        const cs = cutIndex[r.id] || [];
-        const tk = cs.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);
-        tds.push(el('td', { class: cs.length ? '' : 'dim', text: cs.length ? `컷 ${cs.length} · 테이크 ${tk}` : '—' }));
+      if (cfg.cams){
+        const line = camSummaryLine(entKey, r);
+        tds.push(el('td', { class: line ? 'mono tiny' : 'dim', text: line || '—' }));
       }
 
       body.appendChild(el('tr', {
@@ -290,13 +285,28 @@ export async function entityInlineView(root, entKey){
   await draw();
 }
 
+/** 필드 타입별 빈 값 */
+function emptyOf(f){
+  return (f.t === 'photos') ? new Array(f.n||2).fill(null)
+       : (f.t === 'photo')  ? null
+       : (f.t === 'link')   ? [] : '';
+}
+
 /** 새 레코드 생성 (리스트/상세 공용) */
 async function makeRecord(entKey, cfg, project, rows){
   const base = { projectId: project.id };
   for (const g of cfg.groups) for (const f of g.fields){
-    base[f.k] = (f.t === 'photos') ? new Array(f.n||2).fill(null)
-              : (f.t === 'photo') ? null
-              : (f.t === 'link') ? [] : '';
+    if (f.cam) continue;                    // 캠 종속 필드는 cams 아래로
+    base[f.k] = emptyOf(f);
+  }
+  // 캠 탭이 있는 엔티티는 캠별 하위 레코드를 미리 만들어 둔다
+  if (Array.isArray(cfg.cams)){
+    base.cams = {};
+    for (const c of cfg.cams){
+      const o = {};
+      for (const g of cfg.groups) for (const f of g.fields) if (f.cam) o[f.k] = emptyOf(f);
+      base.cams[c] = o;
+    }
   }
   if (cfg.inherit && rows && rows.length){
     const last = rows.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
@@ -333,7 +343,7 @@ export async function entityDetailView(root, entKey, id, go){
     el('button', { class:'btn ghost', text:'← 목록', onclick: async () => { await flushAll(); go(entKey); } }),
     el('div', { class:'detail-title' }, [
       el('div', { class:'eyebrow', text:`${(project.name || 'PROJECT').toUpperCase()} ONSET DATABASE` }),
-      el('h2', { text: `${cfg.labelKo} 입력` }),
+      el('h2', { text: cfg.title || `${cfg.labelKo} 입력` }),
       el('div', { class:'idline' }, [
         el('code', { text: rec.id }),
         el('span', { id:'saveDot', class:'savedot', title:'자동 저장됨' }),
@@ -344,9 +354,14 @@ export async function entityDetailView(root, entKey, id, go){
       el('button', { class:'btn ghost', text:'복제', onclick: async () => {
         const copy = JSON.parse(JSON.stringify(rec));
         copy.id = entKey === 'scenes' ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix||'REC');
+        // 이미지는 복제하지 않는다 (같은 mid 를 둘이 참조하면 한쪽을 지울 때 다른 쪽이 깨진다)
         for (const g of cfg.groups) for (const f of g.fields){
-          if (f.t === 'photo') copy[f.k] = null;
-          if (f.t === 'photos') copy[f.k] = new Array(f.n||2).fill(null);
+          if (f.t !== 'photo' && f.t !== 'photos') continue;
+          if (f.cam && copy.cams){
+            for (const c of (cfg.cams || [])) if (copy.cams[c]) copy.cams[c][f.k] = emptyOf(f);
+          } else {
+            copy[f.k] = emptyOf(f);
+          }
         }
         delete copy.createdAt; delete copy.updatedAt;
         if (cfg.autoStamp){ copy[cfg.autoStamp.date] = nowDate(); copy[cfg.autoStamp.time] = nowTime(); }
@@ -354,373 +369,151 @@ export async function entityDetailView(root, entKey, id, go){
         toast('복제 완료'); go(`${entKey}/${copy.id}`);
       }}),
       el('button', { class:'btn danger', text:'삭제', onclick: async () => {
-        const nCuts = entKey === 'scenes' ? (await DB.listCuts(rec.id)).length : 0;
-        const msg = nCuts ? `이 씬과 하위 컷 ${nCuts}개가 함께 삭제됩니다.` : '되돌릴 수 없습니다.';
-        if (!await confirmBox(`${cfg.labelKo} 삭제`, msg, '삭제', true)) return;
+        if (!await confirmBox(`${cfg.labelKo} 삭제`, '사진을 포함해 되돌릴 수 없습니다.', '삭제', true)) return;
         await DB.del(cfg.store, rec.id);
         toast('삭제 완료', 'warn'); go(entKey);
       }}),
     ])
   ]);
 
-  const form = await renderForm(rec, cfg.groups, entKey,
-    () => autosave(cfg.store, rec), { project, go });
-
-  const pane = el('div', { class:'pane single detail-page' }, [ head, form ]);
+  const save = () => autosave(cfg.store, rec);
+  const pane = el('div', { class:'pane single detail-page' }, [ head ]);
   root.appendChild(pane);
 
-  if (entKey === 'scenes') pane.appendChild(await cutsSection(rec, null));
+  /* ---- 캠(A~D) 탭이 있는 엔티티 (씬) ---- */
+  if (Array.isArray(cfg.cams)){
+    if (!rec.cams || typeof rec.cams !== 'object') rec.cams = {};
+    for (const c of cfg.cams) if (!rec.cams[c]) rec.cams[c] = {};
+
+    let active = firstUsedCam(cfg, rec);
+    const tabBar = el('div', { class:'cam-tabs' });
+    const formHost = el('div', { class:'cam-body' });
+
+    const hasData = (c) => {
+      const d = rec.cams[c] || {};
+      return !!(d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)
+             || (Array.isArray(d.photos) && d.photos.some(x => x && x.mid)));
+    };
+
+    async function drawForm(){
+      clear(formHost);
+      formHost.appendChild(await renderForm(rec, cfg.groups, entKey, save, {
+        project, go, camRec: rec.cams[active],
+      }));
+    }
+    function drawTabs(){
+      clear(tabBar);
+      for (const c of cfg.cams){
+        tabBar.appendChild(el('button', {
+          class:'cam-tab' + (c === active ? ' on' : '') + (hasData(c) ? ' filled' : ''),
+          onclick: async () => { if (c === active) return; active = c; drawTabs(); await drawForm(); },
+        }, [
+          el('b', { text:c }),
+          el('span', { class:'cam-sub', text: camSummary(rec.cams[c]) }),
+        ]));
+      }
+      tabBar.appendChild(el('span', { class:'grow' }));
+      tabBar.appendChild(el('button', {
+        class:'btn primary', text:'📷 모니터 촬영',
+        title:'캠 롤을 읽어 해당 캠 탭에 캠 롤·클립을 채웁니다',
+        onclick: async () => {
+          const cam = await shootMonitorToCam(rec, cfg, active, save);
+          if (!cam) return;
+          active = cam; drawTabs(); await drawForm();
+        },
+      }));
+    }
+
+    drawTabs();
+    await drawForm();
+    pane.append(tabBar, formHost);
+  } else {
+    pane.appendChild(await renderForm(rec, cfg.groups, entKey, save, { project, go }));
+  }
+
   pane.scrollTop = 0;
 }
 
-/* ===================== 모니터 사진 OCR ===================== */
+/** 값이 들어 있는 첫 캠. 없으면 첫 번째 캠. */
+function firstUsedCam(cfg, rec){
+  for (const c of cfg.cams){
+    const d = (rec.cams || {})[c] || {};
+    if (d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)) return c;
+  }
+  return cfg.cams[0];
+}
+
+/** 탭에 곁들일 한 줄 요약 — 'A027 C002' */
+function camSummary(d){
+  if (!d) return '';
+  return [d.camRoll, d.clip].filter(Boolean).join(' ');
+}
 
 /**
- * 테이크의 모니터 사진을 읽어 카메라 정보를 채운다.
- * 판독값은 확인창을 거쳐야만 반영된다 (잘못된 클립 번호가 조용히 들어가는 게 가장 위험).
+ * 모니터를 찍어 캠 롤·클립을 읽고, 그 캠 탭에 채운다.
+ * 판독값은 확인창을 거친다. 사진은 그 캠의 대표 이미지(없으면 현장 사진)로 들어간다.
+ * @returns {Promise<string|null>} 값이 들어간 캠 키
  */
-async function runMonitorOCR(take, save, redraw){
-  if (!take.monitor || !take.monitor.mid) return;
-  const p = progress(); p.set('준비 중', 3);
+async function shootMonitorToCam(rec, cfg, active, save){
+  const files = await pickFiles({ capture:true });
+  if (!files.length) return null;
+
+  const p = progress(); p.set('이미지 압축 중', 15);
+  let ref;
+  try { ref = await ingest(files[0], 'plate'); }
+  catch (e){ p.done(); toast('이미지 처리 실패: ' + e.message, 'err'); return null; }
+
+  let snapped = {}, text = '', confidence = null;
+  const OCR = await import('./ocr.js');
   try {
-    const OCR = await import('./ocr.js');
-    const media = await DB.getMedia(take.monitor.mid);
-    if (!media || !media.blob) throw new Error('사진을 찾을 수 없습니다');
-
-    const { text, confidence, fields } = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
-    p.done();
-
-    // 레퍼런스 목록 표기에 맞춰 스냅
-    const snapped = OCR.parseMonitor(text, {
-      fps: refList('fps'), shutters: refList('shutters'), tStops: refList('tStops'),
-      isoEi: refList('isoEi'), whiteBalance: refList('whiteBalance'), ndFilters: refList('ndFilters'),
-    });
-
-    const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence);
-    if (!picked) return;
-
-    let n = 0;
-    for (const k of OCR.TAKE_KEYS) if (picked[k]){ take[k] = picked[k]; n++; }
-    if (picked.cc){
-      take.note = [take.note, 'CC ' + picked.cc].filter(Boolean).join(' ');
-      n++;
-    }
-    save();
-    if (redraw) await redraw();
-    toast(n ? `${n}개 항목 입력됨` : '적용된 항목 없음', n ? 'ok' : 'warn');
+    const media = await DB.getMedia(ref.mid);
+    const r = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
+    text = r.text; confidence = r.confidence;
+    const all = OCR.parseMonitor(text, {});
+    // 이 화면에서 쓰는 건 캠 롤과 클립뿐이다
+    if (all.camRoll) snapped.camRoll = all.camRoll;
+    if (all.clip)    snapped.clip    = all.clip;
   } catch (e){
-    p.done();
-    toast('판독 실패: ' + e.message, 'err', 5000);
+    toast('판독 실패 — 값은 직접 입력하세요 (' + e.message + ')', 'warn', 4500);
   }
+  p.done();
+
+  const readCam = (String(snapped.camRoll || '').match(/^([A-Za-z])/) || [,''])[1].toUpperCase();
+  const guess = cfg.cams.includes(readCam) ? readCam : active;
+
+  const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence, {
+    targets: cfg.cams.map(c => ({ value:c, label:`${c}캠` })),
+    defaultTarget: guess,
+    targetLabel: readCam ? `${readCam}캠으로 읽혔습니다 — 어느 탭에 넣을까요` : '어느 캠에 넣을까요',
+  });
+  if (!picked){ await DB.delMedia(ref.mid); return null; }
+
+  const cam = picked.__target || guess;
+  const d = rec.cams[cam] = rec.cams[cam] || {};
+  if (picked.camRoll) d.camRoll = picked.camRoll;
+  if (picked.clip)    d.clip    = picked.clip;
+
+  // 대표 이미지가 비어 있으면 거기에, 아니면 현장 사진 빈 칸에 넣는다 (덮어쓰지 않는다)
+  if (!d.thumbnail || !d.thumbnail.mid){
+    d.thumbnail = ref;
+  } else {
+    const pf = allFields('scenes').find(f => f.k === 'photos');
+    const n = (pf && pf.n) || 14;
+    if (!Array.isArray(d.photos)) d.photos = new Array(n).fill(null);
+    while (d.photos.length < n) d.photos.push(null);
+    const slot = d.photos.findIndex(x => !x || !x.mid);
+    if (slot >= 0) d.photos[slot] = ref;
+    else { await DB.delMedia(ref.mid); toast('사진 칸이 가득 찼습니다', 'warn'); }
+  }
+
+  save();
+  toast(`${cam}캠 · ${[d.camRoll, d.clip].filter(Boolean).join(' ') || '사진 등록'}`, 'ok', 3000);
+  return cam;
 }
 
-/* ===================== 씬 하위 컷 / 테이크 ===================== */
-
-async function cutsSection(scene, onChange){
-  const cfg = ENTITIES.cuts;
-  const wrap = el('section', { class:'cuts-sec' });
-  let cuts = await DB.listCuts(scene.id);
-
-  const body = el('div', { class:'cut-list' });
-
-  /** 다음 컷 번호. A/B캠 쌍은 같은 번호를 쓰므로 개수가 아니라 최대값 기준으로 센다. */
-  function nextCutNo(){
-    const nums = cuts.map(c => parseInt(String(c.cutNo||'').match(/\d+/)?.[0] ?? '', 10))
-                     .filter(n => !isNaN(n));
-    return String((nums.length ? Math.max(...nums) : 0) + 1);
-  }
-
-  /** 슬레이트 기본값 — 씬번호-컷번호 (동시 촬영 컷끼리 공유) */
-  function slateFor(cutNo){
-    return [scene.scene, cutNo].filter(Boolean).join('-');
-  }
-
-  /**
-   * 컷 추가. camUnits 를 여러 개 주면 같은 슬레이트로 동시에 만든다.
-   * A/B캠이 동시에 도는 현장에서 각 카메라의 앵글은 별개의 VFX 물량이므로 컷도 별개다.
-   */
-  async function addCut(camUnits = ['']){
-    const last = cuts[cuts.length - 1];
-    const cutNo = nextCutNo();
-    const slate = slateFor(cutNo);
-    let firstId = null;
-    for (const cam of camUnits){
-      const rec = {
-        id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
-        cutNo, camUnit: cam, slate, framing:'',
-        vfxType: last ? last.vfxType : '', workElement:'',
-        vendor: last ? last.vendor : (scene.vendor || ''),
-        vfxShotId:'', shotNote:'', plateNote:'',
-        thumbnail:null, photos:[null,null,null], takes:[],
-      };
-      await DB.put('cuts', rec);
-      if (!firstId) firstId = rec.id;
-    }
-    cuts = await DB.listCuts(scene.id);
-    await draw(firstId);
-    onChange && onChange();
-  }
-
-  /**
-   * 모니터를 찍으면 캠 롤(A027 / B027)을 읽어 알맞은 컷의 테이크로 넣는다.
-   * 현장 순서가 "컷을 미리 만든다"가 아니라 "일단 찍는다"이기 때문에 이게 주 입력 경로다.
-   * 어디에 넣을지는 판독 확인창에서 고른다 — 자동 배치는 조용히 틀리면 되돌리기 어렵다.
-   */
-  async function shootMonitorTake(){
-    const files = await pickFiles({ capture:true });
-    if (!files.length) return;
-
-    const p = progress(); p.set('이미지 압축 중', 15);
-    let ref;
-    try { ref = await ingest(files[0], 'plate'); }
-    catch (e){ p.done(); toast('이미지 처리 실패: ' + e.message, 'err'); return; }
-
-    let snapped = {}, text = '', confidence = null;
-    const OCR = await import('./ocr.js');
-    try {
-      const media = await DB.getMedia(ref.mid);
-      const r = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
-      text = r.text; confidence = r.confidence;
-      snapped = OCR.parseMonitor(text, {
-        fps: refList('fps'), shutters: refList('shutters'), tStops: refList('tStops'),
-        isoEi: refList('isoEi'), whiteBalance: refList('whiteBalance'), ndFilters: refList('ndFilters'),
-        focalLengths: refList('focalLengths'),
-      });
-    } catch (e){
-      // 판독이 실패해도 사진은 살린다 — 값은 손으로 채우면 된다
-      toast('판독 실패 — 값은 직접 입력하세요 (' + e.message + ')', 'warn', 4500);
-    }
-    p.done();
-
-    // B027 → 'B'
-    const camUnit = (String(snapped.camRoll || '').match(/^([A-Za-z])/) || [,''])[1].toUpperCase();
-
-    const { targets, defaultTarget } = planMonitorTake(cuts, camUnit);
-
-    const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence, {
-      targets, defaultTarget,
-      targetLabel: camUnit ? `${camUnit}캠으로 읽혔습니다 — 어느 컷에 넣을까요` : '어느 컷에 넣을까요',
-    });
-    if (!picked){ await DB.delMedia(ref.mid); return; }   // 취소하면 찍은 사진도 버린다
-
-    /* 대상 컷 결정 */
-    let target = cuts.find(c => c.id === picked.__target);
-    if (!target){
-      const pairId = String(picked.__target || '').startsWith('pair:') ? picked.__target.slice(5) : null;
-      const base = pairId ? cuts.find(c => c.id === pairId) : null;
-      const cutNo = base ? base.cutNo : nextCutNo();
-      target = {
-        id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
-        cutNo, camUnit, slate: (base && base.slate) || slateFor(cutNo), framing:'',
-        vfxType: base ? (base.vfxType || '') : '', workElement:'',
-        vendor: (base && base.vendor) || scene.vendor || '',
-        vfxShotId:'', shotNote:'', plateNote:'',
-        thumbnail:null, photos:[null,null,null], takes:[],
-      };
-    }
-
-    if (!Array.isArray(target.takes)) target.takes = [];
-    const take = {
-      takeNo: String(target.takes.length + 1),
-      camRoll:'', clip:'', tc:'', state:'',
-      fps:'', shutter:'', iris:'', ei:'', nd:'', wb:'', lens:'',
-      note:'', monitor: ref,
-    };
-    for (const k of OCR.TAKE_KEYS) if (picked[k]) take[k] = picked[k];
-    if (picked.cc) take.note = 'CC ' + picked.cc;
-    if (!take.camRoll && camUnit) take.camRoll = camUnit;
-    target.takes.push(take);
-
-    await DB.put('cuts', target);
-    cuts = await DB.listCuts(scene.id);
-    await draw(target.id);
-    onChange && onChange();
-    toast(`${cutLabel(target)} · 테이크 ${take.takeNo}${take.clip ? ' (' + take.clip + ')' : ''} 등록`, 'ok', 3000);
-  }
-
-  /** 테이크를 다른 컷으로 옮긴다. 현장에서는 일단 한 컷에 몰아 찍고 나중에 나누는 게 현실적이다. */
-  async function moveTake(fromCut, index, toCutId){
-    const to = cuts.find(c => c.id === toCutId);
-    if (!to || to.id === fromCut.id) return;
-    const tk = fromCut.takes.splice(index, 1)[0];
-    if (!Array.isArray(to.takes)) to.takes = [];
-    to.takes.push(tk);
-    // 디바운스 저장에 맡기지 않는다 — 두 레코드가 동시에 바뀌므로 즉시 기록한다
-    await DB.put('cuts', fromCut);
-    await DB.put('cuts', to);
-    cuts = await DB.listCuts(scene.id);
-    await draw(to.id);
-    onChange && onChange();
-    toast(`테이크를 C${to.cutNo}${to.camUnit ? ' / '+to.camUnit+'캠' : ''} 으로 옮겼습니다`);
-  }
-
-  async function draw(openId){
-    clear(body);
-    if (!cuts.length){
-      body.appendChild(el('div', { class:'empty tiny',
-        text:'컷이 없습니다. 위 「📷 모니터 촬영 → 테이크」 를 누르면 캠 롤을 읽어 컷을 자동으로 만듭니다.' }));
-    }
-    for (const c of cuts) body.appendChild(await cutCard(c, c.id === openId));
-  }
-
-  async function cutCard(cut, open){
-    const card = el('article', { class:'cut-card' + (open ? ' open' : '') });
-    const nTakes = (cut.takes || []).length;
-    const nOk = (cut.takes || []).filter(t => t.state === 'OK').length;
-
-    const save = () => autosave('cuts', cut, () => { onChange && onChange(); });
-
-    /* --- 헤더 (항상 보임) --- */
-    const summary = el('div', { class:'cut-head', onclick:(e) => {
-      if (e.target.closest('button,input,select')) return;
-      card.classList.toggle('open');
-    }}, [
-      el('span', { class:'cut-no', text: 'C' + (cut.cutNo || '?') }),
-      cut.camUnit ? el('span', { class:'tag t-cam', text: cut.camUnit + '캠' }) : null,
-      cut.slate ? el('span', { class:'tag t-slate', text: '슬레이트 ' + cut.slate }) : null,
-      cut.framing ? el('span', { class:'tag', text: cut.framing }) : null,
-      el('span', { class:'tag t-vfxType', text: cut.vfxType || '타입 미정' }),
-      cut.workElement ? el('span', { class:'tag', text: cut.workElement }) : null,
-      cut.vendor ? el('span', { class:'tag', text: cut.vendor }) : null,
-      el('span', { class:'dim tiny', text: nTakes ? `테이크 ${nTakes} (OK ${nOk})` : '테이크 없음' }),
-      el('span', { class:'grow' }),
-      el('button', { class:'btn tiny danger', text:'삭제', onclick: async (e) => {
-        e.stopPropagation();
-        if (!await confirmBox('컷 삭제', `${cutLabel(cut)} 과 테이크 ${nTakes}개가 삭제됩니다.`, '삭제', true)) return;
-        await DB.del('cuts', cut.id);
-        cuts = await DB.listCuts(scene.id);
-        await draw(); onChange && onChange();
-        toast('컷 삭제', 'warn');
-      }}),
-      el('span', { class:'chev', text:'▾' }),
-    ]);
-
-    /* --- 본문 --- */
-    const grid = el('div', { class:'grid cut-grid' });
-    for (const g of cfg.groups){
-      for (const f of g.fields){
-        if (f.t === 'photos') continue;                 // 참고 사진은 아래 별도
-        const cell = el('div', { class:'field' + (f.full ? ' full' : '') });
-        cell.appendChild(el('label', { text:f.label }));
-        if (f.t === 'photo'){
-          cell.appendChild(photoTile(() => cut[f.k], (v) => { cut[f.k] = v; }, 'thumb', save));
-        } else if (f.t === 'textarea'){
-          const ta = el('textarea', { class:'inp ta', rows:2 });
-          ta.value = cut[f.k] || '';
-          ta.addEventListener('input', () => { cut[f.k] = ta.value; save(); });
-          cell.appendChild(ta);
-        } else {
-          cell.appendChild(miniField(f, cut, save));
-        }
-        grid.appendChild(cell);
-      }
-    }
-
-    const takesBox = el('div', { class:'takes' });
-    async function drawTakes(){
-      clear(takesBox);
-      if (!Array.isArray(cut.takes)) cut.takes = [];
-      takesBox.appendChild(el('div', { class:'takes-head' }, [
-        el('h5', { text:`TAKES (${cut.takes.length})` }),
-        el('span', { class:'grow' }),
-        el('button', { class:'btn tiny primary', text:'+ 테이크', onclick: async () => {
-          const prev = cut.takes[cut.takes.length - 1] || {};
-          cut.takes.push({
-            takeNo: String(cut.takes.length + 1),
-            // A캠 컷의 클립은 A-roll 에 담긴다 — 캠 지정이 있으면 그대로 물려준다
-            camRoll: prev.camRoll || cut.camUnit || '', clip:'', tc:'', state:'',
-            fps: prev.fps || '', shutter: prev.shutter || '', iris: prev.iris || '',
-            ei: prev.ei || '', nd: prev.nd || '', wb: prev.wb || '', lens: prev.lens || '',
-            note:'', monitor:null,
-          });
-          save(); await drawTakes();
-        }}),
-      ]));
-
-      if (!cut.takes.length){
-        takesBox.appendChild(el('div', { class:'empty tiny', text:'모니터를 찍어 테이크를 남기세요.' }));
-        return;
-      }
-
-      const table = el('div', { class:'take-table' });
-      table.appendChild(el('div', { class:'take-row hdr' }, [
-        el('span', { class:'tk-mon', text:'모니터' }),
-        ...TAKE_FIELDS.map(f => el('span', { class:'tk-'+f.k, text:f.label })),
-        el('span', { class:'tk-move', text:'컷 이동' }),
-        el('span', { class:'tk-del' }),
-      ]));
-      for (let i = 0; i < cut.takes.length; i++){
-        const tk = cut.takes[i];
-        const row = el('div', { class:'take-row' });
-        row.appendChild(el('span', { class:'tk-mon' }, [
-          photoTile(() => tk.monitor, (v) => { tk.monitor = v; }, 'plate', save, {
-            label:'모니터',
-            onShot: () => runMonitorOCR(tk, save, drawTakes),
-          })
-        ]));
-        for (const f of TAKE_FIELDS){
-          row.appendChild(el('span', { class:'tk-'+f.k }, [ miniField(f, tk, save) ]));
-        }
-        // 컷 이동 — 컷이 둘 이상일 때만 선택지가 생긴다. 열 자체는 늘 자리를 지켜야 표가 안 어긋난다.
-        const moveCell = el('span', { class:'tk-move' });
-        if (cuts.length > 1){
-          const sel = el('select', { class:'inp mini cell', title:'다른 컷으로 이동' });
-          sel.appendChild(el('option', { value:'', text:'—' }));
-          for (const other of cuts){
-            if (other.id === cut.id) continue;
-            sel.appendChild(el('option', { value:other.id, text: cutLabel(other) }));
-          }
-          const idx = i;
-          sel.addEventListener('change', async () => {
-            if (!sel.value) return;
-            await moveTake(cut, idx, sel.value);
-          });
-          moveCell.appendChild(sel);
-        }
-        row.appendChild(moveCell);
-        row.appendChild(el('span', { class:'tk-del' }, [
-          el('button', { class:'btn tiny ghost', text:'×', title:'테이크 삭제', onclick: async () => {
-            if (tk.monitor && tk.monitor.mid) await DB.delMedia(tk.monitor.mid);
-            cut.takes.splice(i,1); save(); await drawTakes();
-          }})
-        ]));
-        table.appendChild(row);
-      }
-      takesBox.appendChild(table);
-    }
-    await drawTakes();
-
-    const photosBox = el('div', { class:'field full' }, [ el('label', { text:'참고 사진' }) ]);
-    if (!Array.isArray(cut.photos)) cut.photos = [null,null,null];
-    const pg = el('div', { class:'photo-grid' });
-    for (let i = 0; i < 3; i++){
-      pg.appendChild(photoTile(() => cut.photos[i], (v) => { cut.photos[i] = v; }, 'photo', save));
-    }
-    photosBox.appendChild(pg);
-
-    card.append(summary, el('div', { class:'cut-body' }, [ grid, takesBox, photosBox ]));
-    return card;
-  }
-
-  await draw();
-  wrap.append(
-    el('div', { class:'row between sec-head' }, [
-      el('div', {}, [
-        el('h4', { text:'CUTS' }),
-        el('div', { class:'dim tiny', text:'모니터를 찍으면 캠 롤(A027 / B027)을 읽어 해당 캠 컷의 테이크로 들어갑니다.' }),
-      ]),
-      el('div', { class:'row gap wrap' }, [
-        el('button', { class:'btn primary big', text:'📷 모니터 촬영 → 테이크',
-                       title:'캠 롤을 읽어 알맞은 컷에 테이크로 넣습니다', onclick: shootMonitorTake }),
-        el('button', { class:'btn ghost', text:'+ A/B캠 동시', title:'같은 슬레이트로 A캠·B캠 컷을 한 번에 만듭니다',
-                       onclick: () => addCut(['A','B']) }),
-        el('button', { class:'btn ghost', text:'+ 빈 컷', onclick: () => addCut([''])}),
-      ]),
-    ]),
-    body
-  );
-  return wrap;
-}
+/* 컷(cuts) 스토어는 남겨 두되 화면에서는 쓰지 않는다.
+   기록 단위가 "씬 + 캠 탭"으로 바뀌었기 때문이다.
+   과거 데이터는 백업 JSON 에 그대로 보존된다. */
 
 /* ===================== PROJECT ===================== */
 
@@ -770,29 +563,26 @@ export async function overviewView(root, go){
   clear(root);
   const p = await DB.getProject();
   const scenes = await DB.list('scenes');
-  const cuts   = await DB.list('cuts');
-  const sceneById = Object.fromEntries(scenes.map(s => [s.id, s]));
 
-  const takes = cuts.reduce((a,c) => a + (c.takes ? c.takes.length : 0), 0);
-  const okTakes = cuts.reduce((a,c) => a + (c.takes||[]).filter(t => t.state === 'OK').length, 0);
+  // 기록 단위가 씬 + 캠 탭이므로 "캠 기록"(값이 들어간 캠) 개수를 센다
+  const camRecords = [];
+  for (const s of scenes) for (const c of usedCams('scenes', s))
+    camRecords.push({ scene:s, cam:c, data:(s.cams||{})[c] || {} });
 
-  const by = (fn) => {
+  const by = (list, fn) => {
     const m = {};
-    for (const c of cuts){ const k = fn(c); if (k) m[k] = (m[k]||0)+1; }
+    for (const x of list){ const k = fn(x); if (k) m[k] = (m[k]||0)+1; }
     return m;
   };
-  const byType   = by(c => c.vfxType || '미분류');
-  const byEp     = by(c => (sceneById[c.sceneId]||{}).episode);
-  const byVendor = by(c => c.vendor || (sceneById[c.sceneId]||{}).vendor || '미배정');
   // 씬의 로케이션은 Location 레코드 id — 이름으로 바꿔야 집계가 사람이 읽을 수 있다
   const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
-  const byLoc    = by(c => {
-    const s = sceneById[c.sceneId] || {};
-    return locName[s.locationId] || s.legacyLocationName;
-  });
-  const byElem   = by(c => c.workElement);
-  const byTod    = by(c => (sceneById[c.sceneId]||{}).tod);
-  const byCam    = by(c => c.camUnit ? c.camUnit + '캠' : '캠 미지정');
+
+  const byEp     = by(scenes, s => s.episode);
+  const byVendor = by(scenes, s => s.vendor || '미배정');
+  const byLoc    = by(scenes, s => locName[s.locationId] || s.legacyLocationName);
+  const byTod    = by(scenes, s => s.tod);
+  const byIntExt = by(scenes, s => s.intExt);
+  const byCam    = by(camRecords, x => x.cam + '캠');
 
   const isDrama = p.type === '드라마';
 
@@ -820,27 +610,25 @@ export async function overviewView(root, go){
         el('div', { class:'dim tiny', text:`크랭크인 ${p.crankIn||'—'} · 크랭크업 ${p.crankUp||'—'} · 납품 ${p.deliveryDate||'—'}` }),
         el('div', { class:'dim tiny', text:`딜리버리 ${[p.deliveryResolution,p.deliveryFps&&p.deliveryFps+'fps',p.deliveryCodec,p.deliveryColorSpace].filter(Boolean).join(' / ')||'—'}` }),
         el('div', { class:'dim tiny', text:
-           `씬 ${scenes.length} · 컷 ${cuts.length} · 테이크 ${takes} (OK ${okTakes})` })
+           `씬 ${scenes.length} · 캠 기록 ${camRecords.length}` })
       ])
     ]),
 
     el('div', { class:'stats big' }, [
       el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(scenes.length)}), el('span',{text:'Scene'}) ]),
-      el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(cuts.length)}), el('span',{text:'Cut (VFX 물량)'}) ]),
-      el('div', { class:'stat' }, [ el('b',{text:String(takes)}), el('span',{text:`Take (OK ${okTakes})`}) ]),
+      el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(camRecords.length)}), el('span',{text:'캠 기록'}) ]),
       el('div', { class:'stat click', onclick:()=>go('locations') }, [ el('b',{text:String((await DB.list('locations')).length)}), el('span',{text:'Location'}) ]),
       el('div', { class:'stat click', onclick:()=>go('assets') }, [ el('b',{text:String((await DB.list('assets')).length)}), el('span',{text:'Asset'}) ]),
       el('div', { class:'stat click', onclick:()=>go('hdri') }, [ el('b',{text:String((await DB.list('hdri')).length)}), el('span',{text:'HDRI'}) ]),
     ]),
 
     el('div', { class:'dash-grid' }, [
-      el('div', { class:'card wide' }, [ el('h4',{text:'작업 타입별 컷 수'}), bars(byType,'v') ]),
-      isDrama ? el('div', { class:'card' }, [ el('h4',{text:'에피소드별 컷 수'}), bars(byEp,'e') ]) : null,
-      el('div', { class:'card' }, [ el('h4',{text:'벤더별'}), bars(byVendor,'s') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'로케이션별'}), bars(byLoc,'e', 10) ]),
-      el('div', { class:'card' }, [ el('h4',{text:'작업 요소 TOP 10'}), bars(byElem,'v', 10) ]),
-      el('div', { class:'card' }, [ el('h4',{text:'시제별 컷 수'}), bars(byTod,'e') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'카메라별 컷 수'}), bars(byCam,'s') ]),
+      isDrama ? el('div', { class:'card wide' }, [ el('h4',{text:'에피소드별 씬 수'}), bars(byEp,'e') ]) : null,
+      el('div', { class:'card' }, [ el('h4',{text:'카메라별 기록 수'}), bars(byCam,'s') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'벤더별 씬 수'}), bars(byVendor,'s') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'로케이션별 씬 수'}), bars(byLoc,'e', 10) ]),
+      el('div', { class:'card' }, [ el('h4',{text:'시제별 씬 수'}), bars(byTod,'e') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'INT / EXT'}), bars(byIntExt,'v') ]),
     ]),
 
     el('div', { class:'row gap wrap' }, [

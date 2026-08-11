@@ -313,6 +313,31 @@ body.printing #printroot{
 .sec-head h2, .sec-head h4{ margin:0; }
 .grow{ flex:1; }
 
+/* ---------- 캠(A~D) 탭 ---------- */
+.cam-tabs{
+  display:flex; align-items:stretch; gap:6px; margin:10px 0 12px;
+  padding-bottom:10px; border-bottom:1px solid var(--line); flex-wrap:wrap;
+}
+.cam-tab{
+  min-width:104px; min-height:52px; padding:6px 14px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  border:1px solid var(--line); border-radius:9px; background:var(--bg2);
+  color:var(--dim); cursor:pointer; transition:background .12s, color .12s, border-color .12s;
+}
+.cam-tab b{ font-size:17px; font-weight:800; letter-spacing:1px; }
+.cam-tab .cam-sub{ font-size:10px; letter-spacing:.3px; opacity:.85; min-height:12px; }
+.cam-tab:hover{ background:var(--bg3); }
+/* 값이 들어 있는 캠은 테두리로 표시한다 */
+.cam-tab.filled{ color:var(--fg); border-color:var(--ok); }
+/* 선택된 캠 */
+.cam-tab.on{ background:var(--ok); border-color:var(--ok); color:#08130c; }
+.cam-tab.on .cam-sub{ opacity:.75; }
+.cam-body{ min-height:120px; }
+/* 캠에 따라 값이 바뀌는 입력칸은 살짝 구분해 준다 */
+.field.camfield > label::after{ content:' ◐'; color:var(--ok); font-size:9px; }
+.link-add{ max-width:100%; }
+td.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; letter-spacing:-.2px; }
+
 /* ---------- 컷 카드 ---------- */
 .cuts-sec{ margin-top:4px; }
 .cut-list{ display:flex; flex-direction:column; gap:8px; }

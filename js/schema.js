@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v18 · 2026-08-11';
+export const BUILD = 'v19 · 2026-08-11';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -192,10 +192,15 @@ export const TAKE_FIELDS = [
 /* ---------- 엔티티 ---------- */
 export const ENTITIES = {
 
-  /* ============ SCENE — 현장 기록 단위 ============ */
+  /* ============ SCENE — 현장 기록 단위 ============
+     한 씬 안에서 카메라(A~D)를 탭으로 나눈다.
+     cam:true 인 필드만 탭에 따라 값이 바뀌고(rec.cams[탭][키] 에 저장),
+     나머지(로케이션·시제·벤더 등)는 씬 전체가 공유한다. */
   scenes: {
-    label:'Scene', labelKo:'씬', title:'씬 리스트', desc:'씬 단위로 기록하고, 그 안에서 컷(카메라별 앵글)과 테이크를 남깁니다.',
+    label:'Scene', labelKo:'씬', title:'Scene List',
+    desc:'씬 단위로 기록하고, 카메라별로 캠 롤·클립·모니터 사진을 남깁니다.',
     icon:'◧', store:'scenes', idPrefix:null,
+    cams:['A','B','C','D'],
     titleFields:['episode','scene'],
     subtitleFields:['intExt','tod'],
     thumbField:'thumbnail',
@@ -205,40 +210,39 @@ export const ENTITIES = {
       { k:'episode', ref:'episodes', label:'EP', when:(p)=>p.type === '드라마' },
       { k:'unit',    ref:'units',    label:'유닛' },
       { k:'intExt',  ref:'intExt',   label:'INT/EXT' },
-      { k:'tod',     ref:'tod',      label:'시간대' },
+      { k:'tod',     ref:'tod',      label:'시제' },
       { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
     listCols:['episode','scene','unit','locationId','intExt','tod','vendor'],
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
-             'locationId','script','shotNote','extraNote','createdAt','updatedAt'],
+             'locationId','vendor','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
-      /* 4열 고정 — 썸네일이 왼쪽에서 4행을 관통한다
-         1행: 에피소드 · 씬 · 유닛   2행: 로케이션(길게)
-         3행: INT/EXT · 시간대 · 벤더   4행: 촬영일 · 촬영시각 */
+      /* 4열 고정 — 썸네일이 왼쪽에서 3행을 관통한다
+         1행: 에피소드 · 씬 · 촬영유닛      2행: 캠 롤 · 클립 · 로케이션
+         3행: INT/EXT · 시제 · 벤더         4행: 촬영일 · 촬영시각 · 에셋 · HDRI */
       { title:'기본정보', cols:4, fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:4 },
+        { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
         { k:'scene',   label:'씬',       t:'combo', ref:'scenes', span:1 },
-        { k:'unit',    label:'캠 유닛',   t:'combo', ref:'units', span:1 },
-        { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:3 },
+        { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1 },
+        { k:'camRoll', label:'캠 롤', t:'text', span:1, cam:true },
+        { k:'clip',    label:'클립',  t:'text', span:1, cam:true },
+        { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:1 },
         { k:'intExt', label:'INT / EXT', t:'select', ref:'intExt', span:1 },
         { k:'tod',    label:'시제',      t:'select', ref:'tod', span:1 },
         { k:'vendor', label:'벤더',      t:'combo',  ref:'vendors', span:1 },
         { k:'shootDate', label:'촬영일',  t:'date', span:1 },
         { k:'shootTime', label:'촬영시각', t:'time', span:1 },
+        { k:'linkedAssetIds', label:'에셋', t:'link', to:'assets', span:1 },
+        { k:'linkedHdriIds',  label:'HDRI', t:'link', to:'hdri',   span:1 },
       ]},
       { title:'내용', fields:[
-        { k:'script',   label:'대본 / 지문', t:'textarea', full:true },
-        { k:'shotNote', label:'씬 노트',     t:'textarea', full:true },
-        { k:'linkedAssetIds', label:'연결 에셋', t:'link', to:'assets', full:true },
-        { k:'linkedHdriIds',  label:'연결 HDRI', t:'link', to:'hdri',   full:true },
-      ]},
-      { title:'메모', fields:[
-        { k:'extraNote', label:'추가 메모', t:'textarea', full:true },
+        { k:'shotNote',  label:'씬 노트', t:'textarea', full:true },
+        { k:'extraNote', label:'메모',    t:'textarea', full:true },
         { k:'sketch',    label:'스케치 (S펜)', t:'sketch', full:true },
       ]},
       { title:'현장 사진', fields:[
-        { k:'photos', label:'현장 사진', t:'photos', n:14, perRow:7, full:true },
+        { k:'photos', label:'현장 사진', t:'photos', n:14, perRow:7, full:true, cam:true },
       ]},
     ],
   },
@@ -500,6 +504,48 @@ export function displayName(entKey, r){
   const head = cfg.titleFields.map(k => r[k]).filter(Boolean).join(' · ');
   const sub  = (cfg.subtitleFields || []).map(k => r[k]).filter(Boolean).join(' · ');
   return [head, sub].filter(Boolean).join(' — ') || r.id;
+}
+
+/**
+ * 리스트·인쇄에 쓸 대표 이미지.
+ * 캠 탭이 있는 엔티티는 이미지가 캠별로 흩어져 있으므로 값이 있는 첫 캠을 쓴다.
+ * (구 데이터는 레코드 최상단에 있으므로 그것도 함께 본다)
+ */
+export function thumbOf(entKey, r){
+  const cfg = ENTITIES[entKey];
+  if (!r) return null;
+  if (Array.isArray(cfg.cams) && r.cams){
+    for (const c of cfg.cams){
+      const v = (r.cams[c] || {})[cfg.thumbField];
+      if (v && v.mid) return v;
+    }
+  }
+  const own = r[cfg.thumbField];
+  return (own && own.mid) ? own : null;
+}
+
+/** 캠별 기록을 한 줄로 — 'A: A027 C002 · B: B027 C001' */
+export function camSummaryLine(entKey, r){
+  const cfg = ENTITIES[entKey];
+  if (!Array.isArray(cfg.cams) || !r || !r.cams) return '';
+  return cfg.cams
+    .map(c => {
+      const d = r.cams[c] || {};
+      const s = [d.camRoll, d.clip].filter(Boolean).join(' ');
+      return s ? `${c}: ${s}` : null;
+    })
+    .filter(Boolean).join(' · ');
+}
+
+/** 값이 들어 있는 캠 개수 */
+export function usedCams(entKey, r){
+  const cfg = ENTITIES[entKey];
+  if (!Array.isArray(cfg.cams) || !r || !r.cams) return [];
+  return cfg.cams.filter(c => {
+    const d = r.cams[c] || {};
+    return !!(d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)
+           || (Array.isArray(d.photos) && d.photos.some(x => x && x.mid)));
+  });
 }
 
 /** 컷을 한 줄로 표기 — 'C1 / B캠' */

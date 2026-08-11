@@ -13,7 +13,7 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 6;
+export const DB_VER  = 7;
 export const APP_ID  = 'Ribi Onset Management';
 export const APP_VER = 8;
 
@@ -178,6 +178,49 @@ async function postMigrate(){
 
   await linkScenesToLocations();
   await moveHdriLinksToScenes();
+  await migrateSceneCams();
+}
+
+/**
+ * v6 → v7 : 기록 단위가 "씬 + 컷" 에서 "씬 + 캠(A~D) 탭" 으로 바뀌었다.
+ *  - 씬 최상단의 대표 이미지/현장 사진 → cams.A
+ *  - 컷의 캠(camUnit)과 첫 테이크의 캠 롤·클립 → 해당 캠
+ * 컷 레코드 자체는 지우지 않는다. 화면에서 안 보일 뿐 백업에는 남아 있어야 한다.
+ * cams 가 이미 있는 씬은 건드리지 않으므로 여러 번 돌아도 안전하다.
+ */
+export async function migrateSceneCams(){
+  const CAMS = (ENTITIES.scenes && ENTITIES.scenes.cams) || ['A','B','C','D'];
+  const scenes = await wrap(tx(['scenes']).objectStore('scenes').getAll());
+  const targets = scenes.filter(s => !s.cams || typeof s.cams !== 'object');
+  if (!targets.length) return 0;
+
+  const cuts = await wrap(tx(['cuts']).objectStore('cuts').getAll());
+  const byScene = {};
+  for (const c of cuts) (byScene[c.sceneId] = byScene[c.sceneId] || []).push(c);
+
+  let n = 0;
+  for (const s of targets){
+    const cams = {};
+    for (const c of CAMS) cams[c] = {};
+
+    // 씬에 직접 붙어 있던 이미지는 A캠으로 옮긴다 (복사가 아니라 이동 — mid 중복 참조 방지)
+    if (s.thumbnail && s.thumbnail.mid){ cams.A.thumbnail = s.thumbnail; delete s.thumbnail; }
+    if (Array.isArray(s.photos) && s.photos.some(x => x && x.mid)){ cams.A.photos = s.photos; delete s.photos; }
+
+    // 컷에 기록돼 있던 캠 롤·클립을 끌어온다 (이미지는 컷 쪽에 그대로 둔다)
+    for (const c of (byScene[s.id] || [])){
+      const tk = (c.takes || [])[0] || {};
+      const cam = String(c.camUnit || tk.camRoll || '').toUpperCase().slice(0,1);
+      if (!CAMS.includes(cam)) continue;
+      if (!cams[cam].camRoll && tk.camRoll) cams[cam].camRoll = tk.camRoll;
+      if (!cams[cam].clip    && tk.clip)    cams[cam].clip    = tk.clip;
+    }
+
+    s.cams = cams;
+    await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+    n++;
+  }
+  return n;
 }
 
 async function migrateAssetLinks(){
@@ -821,6 +864,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   onProgress('연결 정리', 96);
   await linkScenesToLocations();
   await moveHdriLinksToScenes();
+  await migrateSceneCams();
 
   if (mode === 'merge'){ onProgress('미사용 이미지 정리', 98); await gcMedia(); }
   await setCurrentProject(firstPid);

@@ -39,12 +39,13 @@ const ev = (n,t='click')=>n.dispatchEvent(new w.Event(t,{bubbles:true}));
 
 console.log('== Overview ==');
 await V.overviewView(main, ()=>{}); await wait(150);
-ok(main.querySelectorAll('.stat').length===6, `스탯 6개 (${main.querySelectorAll('.stat').length})`);
+ok(main.querySelectorAll('.stat').length===5, `스탯 5개 (${main.querySelectorAll('.stat').length})`);
 ok(main.querySelectorAll('.card').length>=5, `집계 카드 ${main.querySelectorAll('.card').length}개`);
 ok(!main.textContent.includes('상태별'), 'Overview 에서 상태별 집계 제거');
 ok(!main.querySelector('.progress'), '완료 진행률 바 제거');
-ok(main.textContent.includes('작업 타입별 컷 수'), 'VFX 타입 집계 표시');
-ok(main.textContent.includes('Cut (VFX 물량)'), '컷 물량 카운터');
+ok(main.textContent.includes('캠 기록'), '캠 기록 카운터');
+ok(main.textContent.includes('카메라별 기록 수'), '카메라별 집계');
+ok(!main.textContent.includes('Cut (VFX 물량)'), '컷 카운터 제거됨');
 
 console.log('== Project (멀티) ==');
 await V.projectView(main, ()=>{}); await wait(150);
@@ -69,7 +70,7 @@ ok(!!main.querySelector('.eyebrow'), '섹션 번호 eyebrow');
 ok(!!main.querySelector('table.dtable'), '표 형태 리스트');
 const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
 ok(ths[0]==='NO' && ths[1]==='썸네일', `표 헤더 시작 ${ths.slice(0,2).join(' / ')}`);
-ok(ths.includes('컷 / 테이크'), '씬 표에 컷/테이크 열');
+ok(ths.includes('캠 기록'), '씬 표에 캠 기록 열');
 const drows = main.querySelectorAll('tr.drow');
 ok(drows.length===2, `데이터 행 ${drows.length}개`);
 ok(!!main.querySelector('.tcell-img'), '썸네일 셀');
@@ -90,33 +91,85 @@ ok(Array.from(main.querySelectorAll('button')).some(b=>b.textContent==='삭제')
 routed = null; ev(backBtn); await wait(150);
 ok(routed==='scenes', `← 목록 → 리스트로 복귀 (${routed})`);
 await V.entityDetailView(main,'scenes',detailId,go); await wait(400);
-ok(!!main.querySelector('.cuts-sec'), '씬 에디터에 CUTS 섹션');
-const cutCards = main.querySelectorAll('.cut-card');
-ok(cutCards.length===1, `기존 컷 카드 ${cutCards.length}개`);
+ok(!main.querySelector('.cuts-sec'), 'CUTS 섹션 제거됨');
+ok(main.querySelector('.detail-head h2').textContent==='Scene List', '상세 상단 제목 = Scene List');
+
+const camTabs = main.querySelectorAll('.cam-tab');
+ok(camTabs.length===4, `캠 탭 A~D 4개 (${camTabs.length})`);
+ok(Array.from(camTabs).map(t=>t.querySelector('b').textContent).join('')==='ABCD', '탭 라벨 A B C D');
+ok(camTabs[0].classList.contains('on'), '첫 탭이 선택 상태');
+ok(Array.from(main.querySelectorAll('.cam-tabs button')).some(b=>b.textContent.includes('모니터 촬영')),
+   '모니터 촬영 버튼');
+
 const shotBtns = main.querySelectorAll('.photo-empty .btn.shot');
 ok(shotBtns.length>=2, `빈 썸네일에 버튼 ${shotBtns.length}개`);
 ok(shotBtns[0].textContent.includes('촬영') && shotBtns[1].textContent.includes('선택'), '촬영 / 선택 둘 다 제공');
 
-const addCutBtn = Array.from(main.querySelectorAll('.cuts-sec button')).find(b=>b.textContent==='+ 빈 컷');
-ok(!!addCutBtn, '+ 빈 컷 버튼');
 const sceneId = main.querySelector('.detail-head .idline code').textContent;
-ev(addCutBtn); await wait(500);
-const cutsNow = await DB.listCuts(sceneId);
-ok(cutsNow.length===2, `컷 추가 1→2 (${cutsNow.length})`);
-ok(cutsNow[1].vfxType===cutsNow[0].vfxType, '직전 컷 값 상속(타입)');
-ok(main.querySelectorAll('.cut-card').length===2, '카드 2개로 리렌더');
 
-const addTake = Array.from(main.querySelectorAll('.takes-head button')).find(b=>b.textContent==='+ 테이크');
-ok(!!addTake, '+ 테이크 버튼');
-ev(addTake); await wait(200); ev(addTake); await wait(800);
-const afterCuts = await DB.listCuts(sceneId);
-const totalTakes = afterCuts.reduce((a,c)=>a+(c.takes||[]).length,0);
-ok(totalTakes===2, `테이크 2개가 DB에 저장됨 (총 ${totalTakes}, 컷별 ${afterCuts.map(c=>(c.takes||[]).length).join('/')})`);
-const withTakes = afterCuts.find(c=>(c.takes||[]).length);
-ok(withTakes && withTakes.takes[0].takeNo==='1' && withTakes.takes[1].takeNo==='2', '테이크 번호 자동 증가');
-ok(main.querySelectorAll('.take-row').length===3, '테이크 표 = 헤더1 + 행2');
-const monTiles = main.querySelectorAll('.tk-mon .photo-tile');
-ok(monTiles.length===2, '테이크마다 모니터 사진 타일');
+console.log('== 캠 탭: 값이 캠별로 분리 저장되는가 ==');
+{
+  const camRollInp = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent.startsWith('캠 롤'))
+    .querySelector('input');
+  camRollInp.value = 'A027';
+  camRollInp.dispatchEvent(new w.Event('input',{bubbles:true}));
+  await wait(700);
+
+  let rec = await DB.get('scenes', sceneId);
+  ok(rec.cams && rec.cams.A && rec.cams.A.camRoll==='A027', `A탭 값이 cams.A 에 저장 (${rec.cams&&rec.cams.A&&rec.cams.A.camRoll})`);
+  ok(!rec.camRoll, '레코드 최상단은 오염되지 않음');
+
+  // B 탭으로 전환하면 입력칸이 비어 있어야 한다
+  ev(camTabs[1]); await wait(300);
+  const bInp = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent.startsWith('캠 롤'))
+    .querySelector('input');
+  ok(bInp.value==='', `B 탭은 빈 값 (${JSON.stringify(bInp.value)})`);
+  bInp.value = 'B027';
+  bInp.dispatchEvent(new w.Event('input',{bubbles:true}));
+  await wait(700);
+
+  rec = await DB.get('scenes', sceneId);
+  ok(rec.cams.A.camRoll==='A027' && rec.cams.B.camRoll==='B027',
+     `A/B 가 각각 보존 (A=${rec.cams.A.camRoll} B=${rec.cams.B.camRoll})`);
+
+  const { usedCams, camSummaryLine } = await import('../js/schema.js');
+  ok(usedCams('scenes', rec).join('')==='AB', `사용 중인 캠 ${usedCams('scenes', rec).join(',')}`);
+  ok(camSummaryLine('scenes', rec)==='A: A027 · B: B027', `리스트 요약 "${camSummaryLine('scenes', rec)}"`);
+
+  // 씬 공통 필드는 탭과 무관해야 한다
+  const noteTa = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent==='씬 노트')
+    .querySelector('textarea');
+  noteTa.value = '공통 노트';
+  noteTa.dispatchEvent(new w.Event('input',{bubbles:true}));
+  await wait(700);
+  ev(main.querySelectorAll('.cam-tab')[0]); await wait(300);
+  const noteAfter = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent==='씬 노트')
+    .querySelector('textarea');
+  ok(noteAfter.value==='공통 노트', '씬 노트는 탭을 바꿔도 유지 (씬 공통)');
+  rec = await DB.get('scenes', sceneId);
+  ok(rec.shotNote==='공통 노트' && !rec.cams.A.shotNote, '공통 필드는 cams 밑으로 새지 않음');
+}
+
+console.log('== 에셋 / HDRI 드롭다운 선택 ==');
+{
+  const assetField = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent==='에셋');
+  ok(!!assetField, '에셋 필드 존재');
+  const sel = assetField.querySelector('select.link-add');
+  ok(!!sel, '드롭다운으로 고른다 (다이얼로그 아님)');
+  if (sel && sel.options.length>1){
+    sel.value = sel.options[1].value;
+    sel.dispatchEvent(new w.Event('change',{bubbles:true}));
+    await wait(700);
+    const rec2 = await DB.get('scenes', sceneId);
+    ok((rec2.linkedAssetIds||[]).length===1, `선택 시 연결됨 (${JSON.stringify(rec2.linkedAssetIds)})`);
+    ok(!!assetField.querySelector('.chip'), '선택한 항목은 칩으로 표시');
+  }
+}
 
 console.log('== 새 기본값 / 조건부 필드 ==');
 {
@@ -412,14 +465,21 @@ globalThis.URL.createObjectURL=(b)=>{ blob=b; return 'blob:x'; };
 w.HTMLAnchorElement.prototype.click=function(){};
 await E.exportCSV('scenes', await DB.list('scenes')); await wait(200);
 const csv = await blob.text();
-ok(csv.includes('컷 번호') && csv.includes('OK 테이크'), 'Scene CSV 가 컷 단위로 펼쳐짐');
+ok(csv.includes('캠') && csv.includes('캠 롤') && csv.includes('클립'), 'Scene CSV 가 캠 단위로 펼쳐짐');
+ok(!csv.includes('컷 번호') && !csv.includes('OK 테이크'), 'CSV 에서 컷/테이크 열 제거');
 ok(!csv.split('\r\n')[0].includes('상태'), 'CSV 헤더에서 상태 열 제거');
-ok(csv.split('\r\n').length-1 === (await DB.list('cuts')).length, `CSV 행 = 컷 수 ${(await DB.list('cuts')).length}`);
+{
+  const { usedCams } = await import('../js/schema.js');
+  const scs = await DB.list('scenes');
+  const want = scs.reduce((a,s)=>a + Math.max(1, usedCams('scenes', s).length), 0);
+  ok(csv.split('\r\n').length-1 === want, `CSV 행 = 캠 기록 수 ${want}`);
+  ok(csv.includes('A027') && csv.includes('B027'), '캠 롤이 실제로 실려 나감');
+}
 globalThis.URL.createObjectURL=origC;
 await E.exportBreakdown(await DB.list('scenes')); await wait(500);
 const pr = w.document.getElementById('printroot');
 ok(!!pr && pr.querySelectorAll('.bd-card').length===2, `브레이크다운 씬 블록 ${pr?pr.querySelectorAll('.bd-card').length:0}`);
-ok(pr.querySelectorAll('.bd-cuts tbody tr').length>=2, '브레이크다운에 컷 표 포함');
+ok(pr.querySelectorAll('.bd-cuts tbody tr').length>=2, '브레이크다운에 캠 표 포함');
 pr.remove(); w.document.body.classList.remove('printing');
 
 console.log('== 콘솔 에러 ==');

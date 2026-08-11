@@ -479,6 +479,11 @@ async function linkWidget(field, rec, onDirty){
   }
   function set(arr){ rec[field.k] = arr; onDirty && onDirty(); render(); }
 
+  /**
+   * 고른 것은 칩으로, 추가는 드롭다운으로.
+   * 현장에서 다이얼로그를 띄웠다 닫는 것보다 한 번에 고르는 편이 빠르다.
+   * 목록이 길어지면(30개 초과) 검색 다이얼로그를 함께 제공한다.
+   */
   function render(){
     clear(wrap);
     for (const id of cur()){
@@ -488,7 +493,19 @@ async function linkWidget(field, rec, onDirty){
         el('button', { text:'×', onclick: () => set(cur().filter(x => x !== id)) })
       ]));
     }
-    wrap.appendChild(el('button', { class:'btn tiny ghost', text:'+ 연결', onclick: pick }));
+
+    const rest = all.filter(r => !cur().includes(r.id));
+    if (rest.length){
+      const sel = el('select', { class:'inp mini link-add' });
+      sel.appendChild(el('option', { value:'', text:`+ ${cfg.labelKo} 선택` }));
+      for (const r of rest) sel.appendChild(el('option', { value:r.id, text: labelFor(r) }));
+      sel.addEventListener('change', () => { if (sel.value) set([...cur(), sel.value]); });
+      wrap.appendChild(sel);
+      if (rest.length > 30)
+        wrap.appendChild(el('button', { class:'btn tiny ghost', text:'검색', onclick: pick }));
+    } else if (!all.length){
+      wrap.appendChild(el('span', { class:'dim tiny', text:`${cfg.labelKo} 페이지에서 먼저 등록하세요.` }));
+    }
   }
 
   function pick(){
@@ -539,7 +556,9 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
     for (const f of g.fields){
       // when 이 있으면 프로젝트 상태에 따라 필드를 감춘다 (예: 에피소드는 드라마만)
       if (typeof f.when === 'function' && !f.when(ctx.project || {})) continue;
-      const cell = el('div', { class:'field' + (f.full ? ' full' : '') });
+      // cam:true 필드는 현재 캠 탭의 하위 레코드에 읽고 쓴다 (rec.cams.A.camRoll …)
+      const R = (f.cam && ctx.camRec) ? ctx.camRec : rec;
+      const cell = el('div', { class:'field' + (f.full ? ' full' : '') + (f.cam ? ' camfield' : '') });
       if (g.cols){
         const sp = [];
         if (f.span)    sp.push(`grid-column:span ${f.span}`);
@@ -550,14 +569,14 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
 
       if (f.t === 'photo'){
         cell.appendChild(photoTile(
-          () => rec[f.k],
-          (v) => { rec[f.k] = v; },
+          () => R[f.k],
+          (v) => { R[f.k] = v; },
           f.preset || 'thumb', onDirty, { big: f.full }));
 
       } else if (f.t === 'sketch'){
         cell.appendChild(sketchPad(
-          () => rec[f.k],
-          (v) => { rec[f.k] = v; },
+          () => R[f.k],
+          (v) => { R[f.k] = v; },
           onDirty));
 
       } else if (f.t === 'seg'){
@@ -567,8 +586,8 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
           clear(seg);
           for (const o of opts){
             seg.appendChild(el('button', {
-              class:'seg-btn' + (rec[f.k] === o ? ' on' : ''), text:o,
-              onclick: () => { rec[f.k] = o; onDirty && onDirty(); draw(); }
+              class:'seg-btn' + (R[f.k] === o ? ' on' : ''), text:o,
+              onclick: () => { R[f.k] = o; onDirty && onDirty(); draw(); }
             }));
           }
         };
@@ -577,8 +596,8 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
 
       } else if (f.t === 'photos'){
         const n = f.n || 2;
-        if (!Array.isArray(rec[f.k])) rec[f.k] = new Array(n).fill(null);
-        while (rec[f.k].length < n) rec[f.k].push(null);
+        if (!Array.isArray(R[f.k])) R[f.k] = new Array(n).fill(null);
+        while (R[f.k].length < n) R[f.k].push(null);
         // 열 수를 사진 개수에 맞춰 고정한다. auto-fill 이면 화면폭에 따라
         // 마지막 줄에 한두 칸만 남아 어긋나 보인다.
         const per = f.perRow || n;
@@ -588,14 +607,14 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         });
         for (let i = 0; i < n; i++){
           grid.appendChild(photoTile(
-            () => rec[f.k][i],
-            (v) => { rec[f.k][i] = v; },
+            () => R[f.k][i],
+            (v) => { R[f.k][i] = v; },
             f.preset || 'photo', onDirty));
         }
         cell.appendChild(grid);
 
       } else if (f.t === 'link'){
-        cell.appendChild(await linkWidget(f, rec, onDirty));
+        cell.appendChild(await linkWidget(f, R, onDirty));
 
       } else if (f.t === 'recordRef'){
         // 다른 페이지의 레코드를 하나 고른다. id 를 저장하므로 이름을 바꿔도 연결이 유지된다.
@@ -604,10 +623,10 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         sel.appendChild(el('option', { value:'', text:'— 선택 —' }));
         const list = await DB.list(f.to);
         for (const r of list) sel.appendChild(el('option', { value:r.id, text: displayName(f.to, r) }));
-        if (rec[f.k] && !list.some(r => r.id === rec[f.k]))
-          sel.appendChild(el('option', { value:rec[f.k], text:'(삭제된 항목)' }));
-        sel.value = rec[f.k] || '';
-        sel.addEventListener('change', () => { rec[f.k] = sel.value; onDirty && onDirty(); });
+        if (R[f.k] && !list.some(r => r.id === R[f.k]))
+          sel.appendChild(el('option', { value:R[f.k], text:'(삭제된 항목)' }));
+        sel.value = R[f.k] || '';
+        sel.addEventListener('change', () => { R[f.k] = sel.value; onDirty && onDirty(); });
         cell.appendChild(sel);
         if (!list.length){
           cell.appendChild(el('span', { class:'dim tiny',
@@ -621,37 +640,37 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         const sel = el('select', { class:'inp' });
         sel.appendChild(el('option', { value:'', text:'—' }));
         for (const o of refList(f.ref)) sel.appendChild(el('option', { value:o, text:o }));
-        if (rec[f.k] && !refList(f.ref).includes(rec[f.k])) sel.appendChild(el('option',{value:rec[f.k],text:rec[f.k]}));
-        sel.value = rec[f.k] || '';
-        sel.addEventListener('change', () => { rec[f.k] = sel.value; onDirty && onDirty(); });
+        if (R[f.k] && !refList(f.ref).includes(R[f.k])) sel.appendChild(el('option',{value:R[f.k],text:R[f.k]}));
+        sel.value = R[f.k] || '';
+        sel.addEventListener('change', () => { R[f.k] = sel.value; onDirty && onDirty(); });
         cell.appendChild(sel);
 
       } else if (f.t === 'combo'){
-        const inp = el('input', { class:'inp', list:'dl-'+f.ref, value: rec[f.k] || '', autocomplete:'off' });
+        const inp = el('input', { class:'inp', list:'dl-'+f.ref, value: R[f.k] || '', autocomplete:'off' });
         inp.addEventListener('change', async () => {
-          rec[f.k] = inp.value.trim();
-          if (rec[f.k] && f.ref && !refList(f.ref).includes(rec[f.k])){
-            if (await DB.pushRef(f.ref, rec[f.k])){
+          R[f.k] = inp.value.trim();
+          if (R[f.k] && f.ref && !refList(f.ref).includes(R[f.k])){
+            if (await DB.pushRef(f.ref, R[f.k])){
               setRefsCache(await DB.getRefs());
-              toast(`"${rec[f.k]}" 을(를) 레퍼런스에 추가했습니다`, 'ok', 1600);
+              toast(`"${R[f.k]}" 을(를) 레퍼런스에 추가했습니다`, 'ok', 1600);
             }
           }
           onDirty && onDirty();
         });
-        inp.addEventListener('input', () => { rec[f.k] = inp.value; });
+        inp.addEventListener('input', () => { R[f.k] = inp.value; });
         cell.appendChild(inp);
 
       } else if (f.t === 'textarea'){
         const ta = el('textarea', { class:'inp ta', rows: f.rows || 3 });
-        ta.value = rec[f.k] || '';
-        ta.addEventListener('input', () => { rec[f.k] = ta.value; onDirty && onDirty(); });
+        ta.value = R[f.k] || '';
+        ta.addEventListener('input', () => { R[f.k] = ta.value; onDirty && onDirty(); });
         cell.appendChild(ta);
 
       } else {
         const type = f.t === 'date' ? 'date' : f.t === 'time' ? 'time' : 'text';
-        const inp = el('input', { class:'inp', type, value: rec[f.k] || '' });
+        const inp = el('input', { class:'inp', type, value: R[f.k] || '' });
         if (f.t === 'time') inp.step = 1;
-        inp.addEventListener('input', () => { rec[f.k] = inp.value; onDirty && onDirty(); });
+        inp.addEventListener('input', () => { R[f.k] = inp.value; onDirty && onDirty(); });
         cell.appendChild(inp);
       }
       gridChildren.push(cell);
