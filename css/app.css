@@ -322,6 +322,8 @@ body.printing #printroot{
 }
 .cut-head:hover{ background:var(--bg3); }
 .cut-no{ font-weight:800; color:var(--accent); min-width:42px; }
+.tag.t-cam{ color:var(--ok); border-color:var(--ok); font-weight:800; }
+.tag.t-slate{ color:var(--dim); }
 .tag.t-vfxType{ color:var(--warn); border-color:var(--warn); font-weight:700; }
 .tag.t-cut{ color:var(--ok); border-color:var(--ok); }
 .chev{ color:var(--dim); transition:transform .15s; }
@@ -336,9 +338,10 @@ body.printing #printroot{
 .takes-head h5{ margin:0; font-size:11px; letter-spacing:.9px; color:var(--dim); text-transform:uppercase; }
 .take-table{ overflow-x:auto; border:1px solid var(--line); border-radius:9px; }
 .take-row{
-  display:grid; align-items:center; gap:5px; padding:5px 7px; min-width:1180px;
-  grid-template-columns:74px 60px 80px 80px 110px 80px 80px 85px 80px 85px 80px 85px 85px 1fr 34px;
+  display:grid; align-items:center; gap:5px; padding:5px 7px; min-width:1250px;
+  grid-template-columns:74px 60px 80px 80px 110px 80px 80px 85px 80px 85px 80px 85px 85px 1fr 74px 34px;
 }
+.tk-move .inp.cell{ font-size:11px; padding:3px 4px; }
 .take-row + .take-row{ border-top:1px solid var(--line); }
 .take-row.hdr{
   font-size:10px; letter-spacing:.5px; text-transform:uppercase; color:var(--dim);

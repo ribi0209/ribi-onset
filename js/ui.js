@@ -433,7 +433,7 @@ async function backlinkList(f, rec, ctx = {}){
 
   if (!rows.length){
     wrap.appendChild(el('span', { class:'dim tiny',
-      text:`${cfg.labelKo}에서 이 ${'에셋'}을 연결하면 여기에 자동으로 표시됩니다.` }));
+      text:`${cfg.labelKo} 페이지에서 연결하면 여기에 자동으로 표시됩니다.` }));
     return wrap;
   }
   const labelFor = (r) => cfg.titleFields.map(k => r[k]).filter(Boolean).join(' / ') || r.id;

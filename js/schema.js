@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v16 · 2026-08-07';
+export const BUILD = 'v17 · 2026-08-11';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -42,6 +42,7 @@ export const DEFAULT_REFS = {
   scenes: ['1-1','2-1'],
   cutNos: ['1','2','3','4','5','6','7','8','A','B','C'],
   units: ['A','B','C'],
+  framings: ['F.S','L.S','K.S','W.S','M.S','B.S','C.U','B.C.U','E.C.U','2S','O.S','인서트','P.O.V','드론'],
   intExt: ['INT','EXT','INT/EXT'],
   tod: ['DAY','NIGHT','DAWN','DUSK','SUNRISE','SUNSET'],
 
@@ -102,6 +103,7 @@ export const DEFAULT_REFS = {
 export const REF_GROUPS = [
   { title:'Scene / Cut', keys:{
       episodes:'에피소드 (드라마)', scenes:'씬', cutNos:'컷 번호', units:'유닛',
+      framings:'사이즈 / 앵글',
       intExt:'INT/EXT', tod:'시간대', takeStates:'테이크 판정' } },
   { title:'VFX', keys:{
       vfxTypes:'작업 타입 (통계 축)', workElements:'작업 요소', vendors:'벤더' } },
@@ -192,52 +194,59 @@ export const ENTITIES = {
 
   /* ============ SCENE — 현장 기록 단위 ============ */
   scenes: {
-    label:'Scene', labelKo:'씬', title:'씬 리스트', desc:'촬영한 씬과 그 안의 컷·테이크를 기록합니다.',
+    label:'Scene', labelKo:'씬', title:'씬 리스트', desc:'씬 단위로 기록하고, 그 안에서 컷(카메라별 앵글)과 테이크를 남깁니다.',
     icon:'◧', store:'scenes', idPrefix:null,
     titleFields:['episode','scene'],
-    subtitleFields:['location','subLocation'],
+    subtitleFields:['intExt','tod'],
     thumbField:'thumbnail',
-    inherit:['episode','unit','intExt','tod','location','subLocation'],
+    inherit:['episode','unit','intExt','tod','locationId','vendor'],
     autoStamp:{ date:'shootDate', time:'shootTime' },
     filters:[
       { k:'episode', ref:'episodes', label:'EP', when:(p)=>p.type === '드라마' },
       { k:'unit',    ref:'units',    label:'유닛' },
       { k:'intExt',  ref:'intExt',   label:'INT/EXT' },
       { k:'tod',     ref:'tod',      label:'시간대' },
+      { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
-    listCols:['episode','scene','intExt','tod','location'],
+    listCols:['episode','scene','unit','locationId','intExt','tod','vendor'],
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
-             'location','subLocation','script','shotNote','extraNote','createdAt','updatedAt'],
+             'locationId','script','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
-      { title:'식별', fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb' },
-        { k:'episode', label:'에피소드', t:'combo', ref:'episodes', when:(p)=>p.type === '드라마' },
-        { k:'scene',   label:'씬',       t:'combo', ref:'scenes' },
-        { k:'unit',    label:'유닛',     t:'combo', ref:'units' },
-        { k:'shootDate', label:'촬영일', t:'date' },
-        { k:'shootTime', label:'촬영시각', t:'time' },
-      ]},
-      { title:'공간', fields:[
-        { k:'intExt', label:'INT/EXT', t:'select', ref:'intExt' },
-        { k:'tod',    label:'시간대',   t:'select', ref:'tod' },
-        { k:'location', label:'로케이션', t:'combo', ref:'locations' },
-        { k:'subLocation', label:'세부 장소', t:'text' },
+      /* 4열 고정 — 썸네일이 왼쪽에서 4행을 관통한다
+         1행: 에피소드 · 씬 · 유닛   2행: 로케이션(길게)
+         3행: INT/EXT · 시간대 · 벤더   4행: 촬영일 · 촬영시각 */
+      { title:'기본정보', cols:4, fields:[
+        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:4 },
+        { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
+        { k:'scene',   label:'씬',       t:'combo', ref:'scenes', span:1 },
+        { k:'unit',    label:'캠 유닛',   t:'combo', ref:'units', span:1 },
+        { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:3 },
+        { k:'intExt', label:'INT / EXT', t:'select', ref:'intExt', span:1 },
+        { k:'tod',    label:'시제',      t:'select', ref:'tod', span:1 },
+        { k:'vendor', label:'벤더',      t:'combo',  ref:'vendors', span:1 },
+        { k:'shootDate', label:'촬영일',  t:'date', span:1 },
+        { k:'shootTime', label:'촬영시각', t:'time', span:1 },
       ]},
       { title:'내용', fields:[
         { k:'script',   label:'대본 / 지문', t:'textarea', full:true },
         { k:'shotNote', label:'씬 노트',     t:'textarea', full:true },
-      ]},
-      { title:'현장 사진', fields:[
-        { k:'photos', label:'현장 사진', t:'photos', n:4, full:true },
+        { k:'linkedAssetIds', label:'연결 에셋', t:'link', to:'assets', full:true },
+        { k:'linkedHdriIds',  label:'연결 HDRI', t:'link', to:'hdri',   full:true },
       ]},
       { title:'메모', fields:[
         { k:'extraNote', label:'추가 메모', t:'textarea', full:true },
-        { k:'linkedAssetIds', label:'연결 에셋', t:'link', to:'assets', full:true },
+        { k:'sketch',    label:'스케치 (S펜)', t:'sketch', full:true },
+      ]},
+      { title:'현장 사진', fields:[
+        { k:'photos', label:'현장 사진', t:'photos', n:14, perRow:7, full:true },
       ]},
     ],
   },
 
-  /* ============ CUT — VFX 물량 단위 (씬의 자식) ============ */
+  /* ============ CUT — VFX 물량 단위 (씬의 자식) ============
+     컷 = "한 카메라가 잡는 하나의 앵글".
+     A/B캠이 동시에 다른 사이즈를 잡으면 그것은 서로 다른 컷이고,
+     같은 순간이라는 사실은 slate(슬레이트 번호)를 공유해서 표현한다. */
   cuts: {
     label:'Cut', labelKo:'컷', icon:'▤', store:'cuts', idPrefix:'CUT',
     parent:'scenes', parentKey:'sceneId',
@@ -248,13 +257,16 @@ export const ENTITIES = {
       { k:'vfxType', ref:'vfxTypes', label:'타입' },
       { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
-    listCols:['cutNo','vfxType','workElement','vendor'],
-    csvCols:['id','sceneId','episode','scene','cutNo','vfxShotId','vfxType','workElement',
+    listCols:['cutNo','camUnit','vfxType','workElement','vendor'],
+    csvCols:['id','sceneId','episode','scene','cutNo','camUnit','slate','vfxShotId','vfxType','workElement',
              'vendor','takeCount','okTakes','shotNote','plateNote','createdAt','updatedAt'],
     groups:[
       { title:'식별', fields:[
         { k:'thumbnail', label:'컷 이미지', t:'photo', preset:'thumb' },
         { k:'cutNo',     label:'컷 번호', t:'combo', ref:'cutNos' },
+        { k:'camUnit',   label:'캠',      t:'combo', ref:'camRolls', hint:'A캠 / B캠' },
+        { k:'slate',     label:'슬레이트', t:'text',  hint:'동시 촬영끼리 같은 값' },
+        { k:'framing',   label:'사이즈 / 앵글', t:'combo', ref:'framings' },
         { k:'vfxShotId', label:'VFX 샷 ID', t:'text', hint:'편집 확정 후 입력' },
       ]},
       { title:'VFX', fields:[
@@ -424,7 +436,8 @@ export const ENTITIES = {
         { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:2 },
         { k:'intExt', label:'INT / EXT', t:'select', ref:'intExt', span:1 },
         { k:'tod',    label:'시간대',    t:'select', ref:'tod', span:1 },
-        { k:'linkedScene', label:'연결 씬', t:'link', to:'scenes', span:3 },
+        // 연결의 주인은 씬이다. 씬에서 HDRI 를 고르면 여기에 자동으로 나타난다.
+        { k:'linkedScene', label:'연결 씬', t:'backlink', from:'scenes', via:'linkedHdriIds', span:3 },
       ]},
       { title:'HDRI 촬영 스펙', fields:[
         { k:'camera', label:'카메라', t:'combo', ref:'hdriCameras' },

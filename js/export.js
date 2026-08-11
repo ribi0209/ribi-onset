@@ -50,8 +50,11 @@ async function exportSceneCutCSV(scenes, p){
   const bySceneId = {};
   for (const c of allCuts) (bySceneId[c.sceneId] = bySceneId[c.sceneId] || []).push(c);
 
-  const head = ['씬 ID','에피소드','씬','유닛','촬영일','촬영시각','INT/EXT','시간대','로케이션','세부 장소',
-                '컷 번호','VFX 샷 ID','작업 타입','작업 요소','벤더',
+  // 씬의 로케이션은 Location 레코드 id 다 — 이름으로 펼쳐 내보낸다
+  const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
+
+  const head = ['씬 ID','에피소드','씬','유닛','촬영일','촬영시각','INT/EXT','시제','로케이션','벤더',
+                '컷 번호','캠','슬레이트','사이즈/앵글','VFX 샷 ID','작업 타입','작업 요소','컷 벤더',
                 '테이크 수','OK 테이크','캠 롤 / 클립','샷 노트','플레이트 요청','씬 노트'];
   const lines = [head.map(csvCell).join(',')];
 
@@ -61,18 +64,19 @@ async function exportSceneCutCSV(scenes, p){
 
   for (const s of sorted){
     const cuts = (bySceneId[s.id] || []).sort((a,b) =>
-      String(a.cutNo||'').localeCompare(String(b.cutNo||''), 'ko', { numeric:true }));
+      String(a.cutNo||'').localeCompare(String(b.cutNo||''), 'ko', { numeric:true })
+      || String(a.camUnit||'').localeCompare(String(b.camUnit||''), 'ko', { numeric:true }));
     const base = [s.id, s.episode, s.scene, s.unit, s.shootDate, s.shootTime,
-                  s.intExt, s.tod, s.location, s.subLocation];
+                  s.intExt, s.tod, locName[s.locationId] || s.legacyLocationName || '', s.vendor];
     if (!cuts.length){
-      lines.push([...base, '', '', '', '', '', 0, 0, '', '', '', s.shotNote].map(csvCell).join(','));
+      lines.push([...base, '', '', '', '', '', '', '', '', 0, 0, '', '', '', s.shotNote].map(csvCell).join(','));
       continue;
     }
     for (const c of cuts){
       const tk = c.takes || [];
       const clips = tk.map(t => [t.camRoll, t.clip].filter(Boolean).join(' ')).filter(Boolean).join(' / ');
       lines.push([...base,
-        c.cutNo, c.vfxShotId, c.vfxType, c.workElement, c.vendor,
+        c.cutNo, c.camUnit, c.slate, c.framing, c.vfxShotId, c.vfxType, c.workElement, c.vendor,
         tk.length, tk.filter(t => t.state === 'OK').length, clips,
         c.shotNote, c.plateNote, s.shotNote].map(csvCell).join(','));
     }
@@ -148,6 +152,7 @@ export async function exportBreakdown(scenes){
   const allCuts = await DB.list('cuts');
   const bySceneId = {};
   for (const c of allCuts) (bySceneId[c.sceneId] = bySceneId[c.sceneId] || []).push(c);
+  const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
 
   const sorted = scenes.slice().sort((a,b) =>
     (a.episode||'').localeCompare(b.episode||'') ||
@@ -163,7 +168,8 @@ export async function exportBreakdown(scenes){
     for (const ph of (s.photos || [])) if (ph && ph.mid) shots.push(await DB.mediaURL(ph.mid));
 
     const cuts = (bySceneId[s.id] || []).sort((a,b) =>
-      String(a.cutNo||'').localeCompare(String(b.cutNo||''), 'ko', { numeric:true }));
+      String(a.cutNo||'').localeCompare(String(b.cutNo||''), 'ko', { numeric:true })
+      || String(a.camUnit||'').localeCompare(String(b.camUnit||''), 'ko', { numeric:true }));
     cutTotal += cuts.length;
 
     const cutRows = [];
@@ -172,7 +178,9 @@ export async function exportBreakdown(scenes){
       const tk = c.takes || [];
       cutRows.push(el('tr', {}, [
         el('td', { class:'pcell-img' }, [ curl ? el('img', { src:curl }) : el('span',{class:'dim',text:'—'}) ]),
-        el('td', {}, [ el('b', { text:'C' + (c.cutNo || '?') }),
+        el('td', {}, [ el('b', { text:'C' + (c.cutNo || '?') + (c.camUnit ? ' / ' + c.camUnit : '') }),
+                       c.slate ? el('div',{class:'dim',text:'슬레이트 ' + c.slate}) : null,
+                       c.framing ? el('div',{class:'dim',text:c.framing}) : null,
                        c.vfxShotId ? el('div',{class:'dim',text:c.vfxShotId}) : null ]),
         el('td', {}, [ el('span', { class:'bd-badge', text:c.vfxType || '—' }) ]),
         el('td', { text:c.workElement || '' }),
@@ -197,7 +205,8 @@ export async function exportBreakdown(scenes){
         el('dl', { class:'bd-kv' }, [
           ['촬영', [s.shootDate, s.shootTime].filter(Boolean).join(' ')],
           ['유닛', s.unit],
-          ['공간', [s.intExt, s.tod, s.location, s.subLocation].filter(Boolean).join(' · ')],
+          ['공간', [s.intExt, s.tod, locName[s.locationId] || s.legacyLocationName].filter(Boolean).join(' · ')],
+          ['벤더', s.vendor],
         ].flatMap(([k,v]) => v ? [el('dt',{text:k}), el('dd',{text:v})] : [])),
         s.script   ? el('p', { class:'bd-note' }, [ el('b',{text:'대본 '}), document.createTextNode(s.script) ]) : null,
         s.shotNote ? el('p', { class:'bd-note' }, [ el('b',{text:'씬 노트 '}), document.createTextNode(s.shotNote) ]) : null,

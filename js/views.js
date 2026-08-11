@@ -423,21 +423,62 @@ async function cutsSection(scene, onChange){
 
   const body = el('div', { class:'cut-list' });
 
-  async function addCut(){
+  /** 다음 컷 번호. A/B캠 쌍은 같은 번호를 쓰므로 개수가 아니라 최대값 기준으로 센다. */
+  function nextCutNo(){
+    const nums = cuts.map(c => parseInt(String(c.cutNo||'').match(/\d+/)?.[0] ?? '', 10))
+                     .filter(n => !isNaN(n));
+    return String((nums.length ? Math.max(...nums) : 0) + 1);
+  }
+
+  /** 슬레이트 기본값 — 씬번호-컷번호 (동시 촬영 컷끼리 공유) */
+  function slateFor(cutNo){
+    return [scene.scene, cutNo].filter(Boolean).join('-');
+  }
+
+  /**
+   * 컷 추가. camUnits 를 여러 개 주면 같은 슬레이트로 동시에 만든다.
+   * A/B캠이 동시에 도는 현장에서 각 카메라의 앵글은 별개의 VFX 물량이므로 컷도 별개다.
+   */
+  async function addCut(camUnits = ['']){
     const last = cuts[cuts.length - 1];
-    const rec = {
-      id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
-      cutNo: String(cuts.length + 1),
-      vfxType: last ? last.vfxType : '', workElement:'',
-      vendor: last ? last.vendor : '',
-      vfxShotId:'', shotNote:'', plateNote:'',
-      thumbnail:null, photos:[null,null,null], takes:[],
-    };
-    await DB.put('cuts', rec);
+    const cutNo = nextCutNo();
+    const slate = slateFor(cutNo);
+    let firstId = null;
+    for (const cam of camUnits){
+      const rec = {
+        id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
+        cutNo, camUnit: cam, slate, framing:'',
+        vfxType: last ? last.vfxType : '', workElement:'',
+        vendor: last ? last.vendor : (scene.vendor || ''),
+        vfxShotId:'', shotNote:'', plateNote:'',
+        thumbnail:null, photos:[null,null,null], takes:[],
+      };
+      await DB.put('cuts', rec);
+      if (!firstId) firstId = rec.id;
+    }
     cuts = await DB.listCuts(scene.id);
-    await draw(rec.id);
+    await draw(firstId);
     onChange && onChange();
   }
+
+  /** 테이크를 다른 컷으로 옮긴다. 현장에서는 일단 한 컷에 몰아 찍고 나중에 나누는 게 현실적이다. */
+  async function moveTake(fromCut, index, toCutId){
+    const to = cuts.find(c => c.id === toCutId);
+    if (!to || to.id === fromCut.id) return;
+    const tk = fromCut.takes.splice(index, 1)[0];
+    if (!Array.isArray(to.takes)) to.takes = [];
+    to.takes.push(tk);
+    // 디바운스 저장에 맡기지 않는다 — 두 레코드가 동시에 바뀌므로 즉시 기록한다
+    await DB.put('cuts', fromCut);
+    await DB.put('cuts', to);
+    cuts = await DB.listCuts(scene.id);
+    await draw(to.id);
+    onChange && onChange();
+    toast(`테이크를 C${to.cutNo}${to.camUnit ? ' / '+to.camUnit+'캠' : ''} 으로 옮겼습니다`);
+  }
+
+  const cutLabel = (c) =>
+    `C${c.cutNo || '?'}${c.camUnit ? ' / ' + c.camUnit + '캠' : ''}`;
 
   async function draw(openId){
     clear(body);
@@ -460,6 +501,9 @@ async function cutsSection(scene, onChange){
       card.classList.toggle('open');
     }}, [
       el('span', { class:'cut-no', text: 'C' + (cut.cutNo || '?') }),
+      cut.camUnit ? el('span', { class:'tag t-cam', text: cut.camUnit + '캠' }) : null,
+      cut.slate ? el('span', { class:'tag t-slate', text: '슬레이트 ' + cut.slate }) : null,
+      cut.framing ? el('span', { class:'tag', text: cut.framing }) : null,
       el('span', { class:'tag t-vfxType', text: cut.vfxType || '타입 미정' }),
       cut.workElement ? el('span', { class:'tag', text: cut.workElement }) : null,
       cut.vendor ? el('span', { class:'tag', text: cut.vendor }) : null,
@@ -467,7 +511,7 @@ async function cutsSection(scene, onChange){
       el('span', { class:'grow' }),
       el('button', { class:'btn tiny danger', text:'삭제', onclick: async (e) => {
         e.stopPropagation();
-        if (!await confirmBox('컷 삭제', `C${cut.cutNo} 과 테이크 ${nTakes}개가 삭제됩니다.`, '삭제', true)) return;
+        if (!await confirmBox('컷 삭제', `${cutLabel(cut)} 과 테이크 ${nTakes}개가 삭제됩니다.`, '삭제', true)) return;
         await DB.del('cuts', cut.id);
         cuts = await DB.listCuts(scene.id);
         await draw(); onChange && onChange();
@@ -508,7 +552,8 @@ async function cutsSection(scene, onChange){
           const prev = cut.takes[cut.takes.length - 1] || {};
           cut.takes.push({
             takeNo: String(cut.takes.length + 1),
-            camRoll: prev.camRoll || '', clip:'', tc:'', state:'',
+            // A캠 컷의 클립은 A-roll 에 담긴다 — 캠 지정이 있으면 그대로 물려준다
+            camRoll: prev.camRoll || cut.camUnit || '', clip:'', tc:'', state:'',
             fps: prev.fps || '', shutter: prev.shutter || '', iris: prev.iris || '',
             ei: prev.ei || '', nd: prev.nd || '', wb: prev.wb || '', lens: prev.lens || '',
             note:'', monitor:null,
@@ -526,6 +571,7 @@ async function cutsSection(scene, onChange){
       table.appendChild(el('div', { class:'take-row hdr' }, [
         el('span', { class:'tk-mon', text:'모니터' }),
         ...TAKE_FIELDS.map(f => el('span', { class:'tk-'+f.k, text:f.label })),
+        el('span', { class:'tk-move', text:'컷 이동' }),
         el('span', { class:'tk-del' }),
       ]));
       for (let i = 0; i < cut.takes.length; i++){
@@ -540,6 +586,23 @@ async function cutsSection(scene, onChange){
         for (const f of TAKE_FIELDS){
           row.appendChild(el('span', { class:'tk-'+f.k }, [ miniField(f, tk, save) ]));
         }
+        // 컷 이동 — 컷이 둘 이상일 때만 선택지가 생긴다. 열 자체는 늘 자리를 지켜야 표가 안 어긋난다.
+        const moveCell = el('span', { class:'tk-move' });
+        if (cuts.length > 1){
+          const sel = el('select', { class:'inp mini cell', title:'다른 컷으로 이동' });
+          sel.appendChild(el('option', { value:'', text:'—' }));
+          for (const other of cuts){
+            if (other.id === cut.id) continue;
+            sel.appendChild(el('option', { value:other.id, text: cutLabel(other) }));
+          }
+          const idx = i;
+          sel.addEventListener('change', async () => {
+            if (!sel.value) return;
+            await moveTake(cut, idx, sel.value);
+          });
+          moveCell.appendChild(sel);
+        }
+        row.appendChild(moveCell);
         row.appendChild(el('span', { class:'tk-del' }, [
           el('button', { class:'btn tiny ghost', text:'×', title:'테이크 삭제', onclick: async () => {
             if (tk.monitor && tk.monitor.mid) await DB.delMedia(tk.monitor.mid);
@@ -567,8 +630,15 @@ async function cutsSection(scene, onChange){
   await draw();
   wrap.append(
     el('div', { class:'row between sec-head' }, [
-      el('h4', { text:'CUTS' }),
-      el('button', { class:'btn primary', text:'+ 컷', onclick: addCut }),
+      el('div', {}, [
+        el('h4', { text:'CUTS' }),
+        el('div', { class:'dim tiny', text:'컷 = 카메라 하나가 잡는 앵글. 동시에 도는 A/B캠은 슬레이트를 공유하는 별개의 컷입니다.' }),
+      ]),
+      el('div', { class:'row gap' }, [
+        el('button', { class:'btn', text:'+ A/B캠 동시', title:'같은 슬레이트로 A캠·B캠 컷을 한 번에 만듭니다',
+                       onclick: () => addCut(['A','B']) }),
+        el('button', { class:'btn primary', text:'+ 컷', onclick: () => addCut([''])}),
+      ]),
     ]),
     body
   );
@@ -636,10 +706,16 @@ export async function overviewView(root, go){
   };
   const byType   = by(c => c.vfxType || '미분류');
   const byEp     = by(c => (sceneById[c.sceneId]||{}).episode);
-  const byVendor = by(c => c.vendor || '미배정');
-  const byLoc    = by(c => (sceneById[c.sceneId]||{}).location);
+  const byVendor = by(c => c.vendor || (sceneById[c.sceneId]||{}).vendor || '미배정');
+  // 씬의 로케이션은 Location 레코드 id — 이름으로 바꿔야 집계가 사람이 읽을 수 있다
+  const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
+  const byLoc    = by(c => {
+    const s = sceneById[c.sceneId] || {};
+    return locName[s.locationId] || s.legacyLocationName;
+  });
   const byElem   = by(c => c.workElement);
   const byTod    = by(c => (sceneById[c.sceneId]||{}).tod);
+  const byCam    = by(c => c.camUnit ? c.camUnit + '캠' : '캠 미지정');
 
   const isDrama = p.type === '드라마';
 
@@ -686,7 +762,8 @@ export async function overviewView(root, go){
       el('div', { class:'card' }, [ el('h4',{text:'벤더별'}), bars(byVendor,'s') ]),
       el('div', { class:'card' }, [ el('h4',{text:'로케이션별'}), bars(byLoc,'e', 10) ]),
       el('div', { class:'card' }, [ el('h4',{text:'작업 요소 TOP 10'}), bars(byElem,'v', 10) ]),
-      el('div', { class:'card' }, [ el('h4',{text:'시간대별 컷 수'}), bars(byTod,'e') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'시제별 컷 수'}), bars(byTod,'e') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'카메라별 컷 수'}), bars(byCam,'s') ]),
     ]),
 
     el('div', { class:'row gap wrap' }, [

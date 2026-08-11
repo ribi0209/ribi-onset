@@ -13,7 +13,7 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 5;
+export const DB_VER  = 6;
 export const APP_ID  = 'Ribi Onset Management';
 export const APP_VER = 8;
 
@@ -73,6 +73,10 @@ function upgrade(db, t, oldVersion){
       };
     }
   }
+
+  /* v5 → v6 (씬 로케이션의 레코드 연결화) 는 여기서 하지 않는다.
+     versionchange 트랜잭션 안에서 여러 스토어를 오가면 요청 순서에 따라
+     v2→v3 단계의 씬 쓰기에 덮어써질 수 있다. postMigrate 에서 처리한다. */
 
   /* v4 → v5 : 에셋에서 폐기한 필드 정리 (씬과의 연결 이관은 postMigrate 에서) */
   if (oldVersion > 0 && oldVersion < 5 && db.objectStoreNames.contains('assets')){
@@ -167,9 +171,16 @@ async function postMigrate(){
   if (_postDone) return;
   _postDone = true;
 
+  // 이관 단계마다 플래그를 따로 둔다. 하나로 묶으면 새 단계를 추가했을 때
+  // 이미 플래그가 켜진 기기에서는 영영 실행되지 않는다.
   const flag = await wrap(tx(['kv']).objectStore('kv').get('assetLinkMigrated'));
-  if (flag && flag.value) return;
+  if (!(flag && flag.value)) await migrateAssetLinks();
 
+  await linkScenesToLocations();
+  await moveHdriLinksToScenes();
+}
+
+async function migrateAssetLinks(){
   // 에셋에 남아 있던 정방향 연결(linkedSceneIds)을 씬 쪽(linkedAssetIds)으로 옮긴다
   const assets = await wrap(tx(['assets']).objectStore('assets').getAll());
   const pend = [];
@@ -194,6 +205,76 @@ async function postMigrate(){
   await wrap(tx(['kv'],'readwrite').objectStore('kv').put({ key:'assetLinkMigrated', value:true }));
 }
 
+/** Location 레코드를 이름으로 찾는다. "대장소 소장소" 형태까지 맞춰본다. */
+function matchLocation(name, locations){
+  const norm = (s) => String(s || '').replace(/\s+/g,'').toLowerCase();
+  const q = norm(name);
+  if (!q) return null;
+  return locations.find(l => norm([l.mainLocation, l.subLocation].filter(Boolean).join('')) === q)
+      || locations.find(l => norm(l.mainLocation) === q)
+      || locations.find(l => q && norm(l.mainLocation) && q.startsWith(norm(l.mainLocation)))
+      || null;
+}
+
+/**
+ * 씬에 문자열로만 남아 있던 로케이션 이름을 Location 레코드에 연결한다.
+ * 이름이 안 맞으면 legacyLocationName 을 남겨 둔다 — 조용히 버리면 어디였는지 알 수 없게 된다.
+ */
+export async function linkScenesToLocations(){
+  const locations = await wrap(tx(['locations']).objectStore('locations').getAll());
+  const scenes = await wrap(tx(['scenes']).objectStore('scenes').getAll());
+  let n = 0;
+  for (const s of scenes){
+    let dirty = false;
+
+    // 1) 구 스키마의 자유 입력 문자열을 이름 보관 필드로 옮긴다
+    if (typeof s.location === 'string' && s.location){
+      if (!s.locationId && !s.legacyLocationName) s.legacyLocationName = s.location;
+      delete s.location; dirty = true;
+    }
+    if ('subLocation' in s){
+      // 소장소는 Location 레코드가 들고 있다 — 씬에서는 중복이므로 이름에만 합쳐 둔다
+      if (s.subLocation && s.legacyLocationName && !s.legacyLocationName.includes(s.subLocation))
+        s.legacyLocationName += ' ' + s.subLocation;
+      delete s.subLocation; dirty = true;
+    }
+
+    // 2) 이름으로 Location 레코드를 찾아 연결한다. 못 찾으면 이름을 남겨 둔다
+    //    (조용히 버리면 그 씬이 어디였는지 알 수 없게 된다)
+    if (!s.locationId && s.legacyLocationName && locations.length){
+      const hit = matchLocation(s.legacyLocationName, locations.filter(l => l.projectId === s.projectId))
+               || matchLocation(s.legacyLocationName, locations);
+      if (hit){ s.locationId = hit.id; delete s.legacyLocationName; dirty = true; n++; }
+    }
+
+    if (dirty) await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+  }
+  return n;
+}
+
+/** HDRI 쪽에 있던 씬 연결을 씬 쪽(linkedHdriIds)으로 옮긴다. 연결의 주인은 씬 하나뿐이어야 한다. */
+export async function moveHdriLinksToScenes(){
+  const hdris = await wrap(tx(['hdri']).objectStore('hdri').getAll());
+  let n = 0;
+  for (const h of hdris){
+    if (!('linkedScene' in h)) continue;
+    const ids = Array.isArray(h.linkedScene) ? h.linkedScene : (h.linkedScene ? [h.linkedScene] : []);
+    for (const sid of ids){
+      const s = await wrap(tx(['scenes']).objectStore('scenes').get(sid));
+      if (!s) continue;
+      if (!Array.isArray(s.linkedHdriIds)) s.linkedHdriIds = [];
+      if (!s.linkedHdriIds.includes(h.id)){
+        s.linkedHdriIds.push(h.id);
+        await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+        n++;
+      }
+    }
+    delete h.linkedScene;
+    await wrap(tx(['hdri'],'readwrite').objectStore('hdri').put(h));
+  }
+  return n;
+}
+
 /** 레거시 레코드 정규화 (폐기 필드 제거 + 필드명 이관) */
 function normalizeLegacy(rec){
   const o = {};
@@ -209,6 +290,18 @@ function normalizeLegacy(rec){
  * (예전에는 업그레이드에만 있어서, 구 백업을 새로 가져오면 대장소가 비어 있었다)
  */
 function normalizeStore(store, r){
+  if (store === 'scenes'){
+    // 구 백업의 로케이션은 문자열이었다 → 이름만 보존하고 레코드 연결은 import 끝에 붙인다
+    if (typeof r.location === 'string' && r.location){
+      if (!r.locationId) r.legacyLocationName = r.location;
+      delete r.location;
+    }
+    if (r.subLocation){
+      if (r.legacyLocationName) r.legacyLocationName += ' ' + r.subLocation;
+      delete r.subLocation;
+    }
+    delete r.subLocation;
+  }
   if (store === 'locations'){
     if (r.shootLocation){
       if (!r.mainLocation) r.mainLocation = r.shootLocation;
@@ -372,8 +465,10 @@ export async function list(store, projectId){
 /** 특정 씬에 속한 컷 (컷 번호순) */
 export async function listCuts(sceneId){
   const rows = await listAll('cuts');
+  // 컷 번호 → 캠(A,B,…) 순. 동시 촬영 쌍이 나란히 붙어 보여야 한다.
   return rows.filter(r => r.sceneId === sceneId)
              .sort((a,b) => String(a.cutNo||'').localeCompare(String(b.cutNo||''), 'ko', { numeric:true })
+                          || String(a.camUnit||'').localeCompare(String(b.camUnit||''), 'ko', { numeric:true })
                           || (a.createdAt||'').localeCompare(b.createdAt||''));
 }
 
@@ -721,6 +816,11 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
     delete a.linkedSceneIds;
     await wrap(tx(['assets'],'readwrite').objectStore('assets').put(a));
   }
+
+  // 씬의 로케이션 이름 → Location 레코드 연결, HDRI 쪽 씬 연결 → 씬으로 이관
+  onProgress('연결 정리', 96);
+  await linkScenesToLocations();
+  await moveHdriLinksToScenes();
 
   if (mode === 'merge'){ onProgress('미사용 이미지 정리', 98); await gcMedia(); }
   await setCurrentProject(firstPid);

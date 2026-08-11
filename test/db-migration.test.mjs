@@ -15,7 +15,7 @@ await new Promise((res,rej)=>{
   };
   req.onsuccess = ()=>{
     const db = req.result;
-    const t = db.transaction(['kv','scenes','locations','assets'],'readwrite');
+    const t = db.transaction(['kv','scenes','locations','assets','hdri'],'readwrite');
     t.objectStore('kv').put({ key:'project', value:{
       key:'project', name:'PMT (프로모터)', type:'드라마', director:'이종석',
       deliveryFps:'23.976', crankIn:'2026-07-27' }});
@@ -26,10 +26,13 @@ await new Promise((res,rej)=>{
       createdAt:'2026-08-01T00:00:00.000Z' });
     t.objectStore('scenes').put({ id:'PMT-20260801-101011-BBBB', episode:'EP02', scene:'3-1',
       vfxA:'3D VFX', vendor:'DEXTER', status:'완료' });
-    t.objectStore('scenes').put({ id:'PMT-20260801-101012-CCCC', episode:'EP03', scene:'1-1' }); // VFX 없음
+    t.objectStore('scenes').put({ id:'PMT-20260801-101012-CCCC', episode:'EP03', scene:'1-1',
+      location:'팔복사무실', subLocation:'구로' }); // VFX 없음
     t.objectStore('locations').put({ id:'LOC-1', shootLocation:'팔복사무실', setType:'Location',
       model3d:'None', seasonStart:'3월', seasonEnd:'5월', surveyPhotos:[null,null] });
     t.objectStore('locations').put({ id:'LOC-2', shootLocation:'조양 체육관', mainLocation:'인천', subLocation:'창고' });
+    t.objectStore('hdri').put({ id:'HDR-1', hdriId:'H01',
+      linkedScene:['PMT-20260801-101010-AAAA'] });
     t.objectStore('assets').put({ id:'AST-1', name:'말', linkedSceneIds:['PMT-20260801-101010-AAAA'],
       path:'/vol/assets/horse', memo:'구버전 메모', propMethod:'Photogrammetry', lidar:'LiDAR',
       material:'피부', imagePhotos:[null,null], platePhotos:[null,null] });
@@ -42,7 +45,7 @@ console.log('== v2 DB 준비 완료 (씬 3건, VFX 정보 2건) ==');
 
 const DB = await import('../js/db.js');
 const db = await DB.open();
-ok(db.version===5, `DB 버전 ${db.version} → 5`);
+ok(db.version===6, `DB 버전 ${db.version} → 6`);
 ok(db.objectStoreNames.contains('projects'), 'projects 스토어 생성');
 ok(db.objectStoreNames.contains('cuts'), 'cuts 스토어 생성');
 
@@ -74,7 +77,7 @@ ok(b && b.vfxType==='3D', `'3D VFX' → '${b&&b.vfxType}'`);
 
 const s1 = scenes.find(s=>s.id==='PMT-20260801-101010-AAAA');
 ok(!('vfxA' in s1) && !('vendor' in s1) && !('filename' in s1), '씬에서 VFX 필드 제거');
-ok(s1.episode==='EP01' && s1.location==='조양 체육관' && s1.shotNote==='와이어 3개', '씬 고유 필드는 그대로');
+ok(s1.episode==='EP01' && s1.shotNote==='와이어 3개', '씬 고유 필드는 그대로');
 
 console.log('== v3 → v4 : 로케이션 정리 ==');
 const locs = await DB.list('locations');
@@ -97,6 +100,28 @@ ok(!('linkedSceneIds' in asset), '에셋의 정방향 연결 필드 제거 (이�
 for (const k of ['path','memo','propMethod','lidar','material','imagePhotos','platePhotos'])
   ok(!(k in asset), `에셋 폐기 필드 제거: ${k}`);
 ok(asset.name==='말', '에셋 이름은 그대로');
+
+console.log('== v5 → v6 : 씬 로케이션을 Location 레코드에 연결 ==');
+{
+  const sc = await DB.list('scenes');
+  const a = sc.find(s=>s.id==='PMT-20260801-101010-AAAA');
+  const c = sc.find(s=>s.id==='PMT-20260801-101012-CCCC');
+  const locs2 = await DB.list('locations');
+  const loc1 = locs2.find(l=>l.id==='LOC-1');
+
+  ok(!('location' in a) && !('subLocation' in a), '씬에서 자유 입력 로케이션 필드 제거');
+  // '조양 체육관' 과 이름이 맞는 Location 레코드가 없다 → 이름을 남겨 둬야 한다
+  ok(a.legacyLocationName==='조양 체육관', `못 찾은 이름은 보존 (${a.legacyLocationName})`);
+  ok(!a.locationId, '억지로 연결하지 않음');
+  // '팔복사무실 구로' → 대장소 '팔복사무실' 로 앞자리 매칭
+  ok(c.locationId===loc1.id, `이름으로 Location 연결 (${c.locationId} === ${loc1.id})`);
+  ok(!('legacyLocationName' in c), '연결되면 임시 이름은 제거');
+
+  const h = (await DB.list('hdri'))[0];
+  ok(!('linkedScene' in h), 'HDRI 의 정방향 씬 연결 제거 (이제 역방향 표시)');
+  ok(Array.isArray(a.linkedHdriIds) && a.linkedHdriIds.includes('HDR-1'),
+     `씬에 연결 HDRI 심어짐 (${JSON.stringify(a.linkedHdriIds)})`);
+}
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);
