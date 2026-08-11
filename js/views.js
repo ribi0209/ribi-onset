@@ -6,7 +6,7 @@
 import * as DB from './db.js';
 import {
   ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD,
-  fieldMap, labelOf, displayName
+  fieldMap, labelOf, displayName, cutLabel, planMonitorTake
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -461,6 +461,83 @@ async function cutsSection(scene, onChange){
     onChange && onChange();
   }
 
+  /**
+   * 모니터를 찍으면 캠 롤(A027 / B027)을 읽어 알맞은 컷의 테이크로 넣는다.
+   * 현장 순서가 "컷을 미리 만든다"가 아니라 "일단 찍는다"이기 때문에 이게 주 입력 경로다.
+   * 어디에 넣을지는 판독 확인창에서 고른다 — 자동 배치는 조용히 틀리면 되돌리기 어렵다.
+   */
+  async function shootMonitorTake(){
+    const files = await pickFiles({ capture:true });
+    if (!files.length) return;
+
+    const p = progress(); p.set('이미지 압축 중', 15);
+    let ref;
+    try { ref = await ingest(files[0], 'plate'); }
+    catch (e){ p.done(); toast('이미지 처리 실패: ' + e.message, 'err'); return; }
+
+    let snapped = {}, text = '', confidence = null;
+    const OCR = await import('./ocr.js');
+    try {
+      const media = await DB.getMedia(ref.mid);
+      const r = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
+      text = r.text; confidence = r.confidence;
+      snapped = OCR.parseMonitor(text, {
+        fps: refList('fps'), shutters: refList('shutters'), tStops: refList('tStops'),
+        isoEi: refList('isoEi'), whiteBalance: refList('whiteBalance'), ndFilters: refList('ndFilters'),
+        focalLengths: refList('focalLengths'),
+      });
+    } catch (e){
+      // 판독이 실패해도 사진은 살린다 — 값은 손으로 채우면 된다
+      toast('판독 실패 — 값은 직접 입력하세요 (' + e.message + ')', 'warn', 4500);
+    }
+    p.done();
+
+    // B027 → 'B'
+    const camUnit = (String(snapped.camRoll || '').match(/^([A-Za-z])/) || [,''])[1].toUpperCase();
+
+    const { targets, defaultTarget } = planMonitorTake(cuts, camUnit);
+
+    const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence, {
+      targets, defaultTarget,
+      targetLabel: camUnit ? `${camUnit}캠으로 읽혔습니다 — 어느 컷에 넣을까요` : '어느 컷에 넣을까요',
+    });
+    if (!picked){ await DB.delMedia(ref.mid); return; }   // 취소하면 찍은 사진도 버린다
+
+    /* 대상 컷 결정 */
+    let target = cuts.find(c => c.id === picked.__target);
+    if (!target){
+      const pairId = String(picked.__target || '').startsWith('pair:') ? picked.__target.slice(5) : null;
+      const base = pairId ? cuts.find(c => c.id === pairId) : null;
+      const cutNo = base ? base.cutNo : nextCutNo();
+      target = {
+        id: DB.makeId('CUT'), projectId: scene.projectId, sceneId: scene.id,
+        cutNo, camUnit, slate: (base && base.slate) || slateFor(cutNo), framing:'',
+        vfxType: base ? (base.vfxType || '') : '', workElement:'',
+        vendor: (base && base.vendor) || scene.vendor || '',
+        vfxShotId:'', shotNote:'', plateNote:'',
+        thumbnail:null, photos:[null,null,null], takes:[],
+      };
+    }
+
+    if (!Array.isArray(target.takes)) target.takes = [];
+    const take = {
+      takeNo: String(target.takes.length + 1),
+      camRoll:'', clip:'', tc:'', state:'',
+      fps:'', shutter:'', iris:'', ei:'', nd:'', wb:'', lens:'',
+      note:'', monitor: ref,
+    };
+    for (const k of OCR.TAKE_KEYS) if (picked[k]) take[k] = picked[k];
+    if (picked.cc) take.note = 'CC ' + picked.cc;
+    if (!take.camRoll && camUnit) take.camRoll = camUnit;
+    target.takes.push(take);
+
+    await DB.put('cuts', target);
+    cuts = await DB.listCuts(scene.id);
+    await draw(target.id);
+    onChange && onChange();
+    toast(`${cutLabel(target)} · 테이크 ${take.takeNo}${take.clip ? ' (' + take.clip + ')' : ''} 등록`, 'ok', 3000);
+  }
+
   /** 테이크를 다른 컷으로 옮긴다. 현장에서는 일단 한 컷에 몰아 찍고 나중에 나누는 게 현실적이다. */
   async function moveTake(fromCut, index, toCutId){
     const to = cuts.find(c => c.id === toCutId);
@@ -477,13 +554,11 @@ async function cutsSection(scene, onChange){
     toast(`테이크를 C${to.cutNo}${to.camUnit ? ' / '+to.camUnit+'캠' : ''} 으로 옮겼습니다`);
   }
 
-  const cutLabel = (c) =>
-    `C${c.cutNo || '?'}${c.camUnit ? ' / ' + c.camUnit + '캠' : ''}`;
-
   async function draw(openId){
     clear(body);
     if (!cuts.length){
-      body.appendChild(el('div', { class:'empty tiny', text:'컷이 없습니다. 아래 + 컷 으로 추가하세요.' }));
+      body.appendChild(el('div', { class:'empty tiny',
+        text:'컷이 없습니다. 위 「📷 모니터 촬영 → 테이크」 를 누르면 캠 롤을 읽어 컷을 자동으로 만듭니다.' }));
     }
     for (const c of cuts) body.appendChild(await cutCard(c, c.id === openId));
   }
@@ -632,12 +707,14 @@ async function cutsSection(scene, onChange){
     el('div', { class:'row between sec-head' }, [
       el('div', {}, [
         el('h4', { text:'CUTS' }),
-        el('div', { class:'dim tiny', text:'컷 = 카메라 하나가 잡는 앵글. 동시에 도는 A/B캠은 슬레이트를 공유하는 별개의 컷입니다.' }),
+        el('div', { class:'dim tiny', text:'모니터를 찍으면 캠 롤(A027 / B027)을 읽어 해당 캠 컷의 테이크로 들어갑니다.' }),
       ]),
-      el('div', { class:'row gap' }, [
-        el('button', { class:'btn', text:'+ A/B캠 동시', title:'같은 슬레이트로 A캠·B캠 컷을 한 번에 만듭니다',
+      el('div', { class:'row gap wrap' }, [
+        el('button', { class:'btn primary big', text:'📷 모니터 촬영 → 테이크',
+                       title:'캠 롤을 읽어 알맞은 컷에 테이크로 넣습니다', onclick: shootMonitorTake }),
+        el('button', { class:'btn ghost', text:'+ A/B캠 동시', title:'같은 슬레이트로 A캠·B캠 컷을 한 번에 만듭니다',
                        onclick: () => addCut(['A','B']) }),
-        el('button', { class:'btn primary', text:'+ 컷', onclick: () => addCut([''])}),
+        el('button', { class:'btn ghost', text:'+ 빈 컷', onclick: () => addCut([''])}),
       ]),
     ]),
     body

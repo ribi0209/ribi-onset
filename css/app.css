@@ -323,6 +323,9 @@ body.printing #printroot{
 .cut-head:hover{ background:var(--bg3); }
 .cut-no{ font-weight:800; color:var(--accent); min-width:42px; }
 .tag.t-cam{ color:var(--ok); border-color:var(--ok); font-weight:800; }
+/* 판독 확인창의 "어느 컷에 넣을까" 선택 */
+.ocr-target{ margin:10px 0 4px; padding:10px; border:1px solid var(--accent); border-radius:9px; background:var(--bg3); }
+.ocr-target label{ display:block; font-size:11px; letter-spacing:.5px; color:var(--dim); margin-bottom:5px; }
 .tag.t-slate{ color:var(--dim); }
 .tag.t-vfxType{ color:var(--warn); border-color:var(--warn); font-weight:700; }
 .tag.t-cut{ color:var(--ok); border-color:var(--ok); }

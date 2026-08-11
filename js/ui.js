@@ -362,11 +362,19 @@ export function lightbox(url, name){
  * OCR 은 100% 가 아니므로 절대 자동 적용하지 않는다.
  * @returns {Promise<object|null>} 적용할 { key: value } 또는 null(취소)
  */
-export function ocrReview(fields, labels, rawText, confidence){
+export function ocrReview(fields, labels, rawText, confidence, opts = {}){
   return new Promise(res => {
     const keys = Object.keys(fields);
     const picked = {};
     const inputs = {};
+
+    // 어느 컷에 넣을지 고르는 셀렉트 (모니터 촬영 → 테이크 자동 분류용)
+    let targetSel = null;
+    if (Array.isArray(opts.targets) && opts.targets.length){
+      targetSel = el('select', { class:'inp' });
+      for (const t of opts.targets) targetSel.appendChild(el('option', { value:t.value, text:t.label }));
+      targetSel.value = opts.defaultTarget || opts.targets[0].value;
+    }
 
     const rows = keys.map(k => {
       const chk = el('input', { type:'checkbox', class:'ocr-chk' });
@@ -392,6 +400,10 @@ export function ocrReview(fields, labels, rawText, confidence){
         el('h3', { text:'모니터 판독 결과' }),
         el('p', { class:'dim tiny', text:
           `인식 신뢰도 ${confidence!=null ? confidence.toFixed(0)+'%' : '—'} · 값을 확인하고 고친 뒤 적용하세요. 체크 해제하면 그 항목은 건드리지 않습니다.` }),
+        targetSel ? el('div', { class:'ocr-target' }, [
+          el('label', { text: opts.targetLabel || '어느 컷에 넣을까요' }),
+          targetSel,
+        ]) : null,
         body,
         el('div', { class:'row between gap' }, [
           el('button', { class:'btn ghost tiny', text:'원문 보기', onclick:(e)=>{
@@ -400,9 +412,12 @@ export function ocrReview(fields, labels, rawText, confidence){
           }}),
           el('div', { class:'row gap' }, [
             el('button', { class:'btn ghost', text:'취소', onclick:()=>close(null) }),
-            el('button', { class:'btn primary', text:'적용', disabled: keys.length ? null : '', onclick:()=>{
+            // 대상 선택이 있으면 판독값이 하나도 없어도 진행할 수 있어야 한다
+            // (사진은 남기고 값은 손으로 채우는 경우)
+            el('button', { class:'btn primary', text:'적용', disabled: (keys.length || targetSel) ? null : '', onclick:()=>{
               const out = {};
               for (const k of keys) if (picked[k].checked && inputs[k].value.trim()) out[k] = inputs[k].value.trim();
+              if (targetSel) out.__target = targetSel.value;
               close(out);
             }}),
           ])

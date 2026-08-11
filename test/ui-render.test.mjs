@@ -97,8 +97,8 @@ const shotBtns = main.querySelectorAll('.photo-empty .btn.shot');
 ok(shotBtns.length>=2, `빈 썸네일에 버튼 ${shotBtns.length}개`);
 ok(shotBtns[0].textContent.includes('촬영') && shotBtns[1].textContent.includes('선택'), '촬영 / 선택 둘 다 제공');
 
-const addCutBtn = Array.from(main.querySelectorAll('.cuts-sec button')).find(b=>b.textContent==='+ 컷');
-ok(!!addCutBtn, '+ 컷 버튼');
+const addCutBtn = Array.from(main.querySelectorAll('.cuts-sec button')).find(b=>b.textContent==='+ 빈 컷');
+ok(!!addCutBtn, '+ 빈 컷 버튼');
 const sceneId = main.querySelector('.detail-head .idline code').textContent;
 ev(addCutBtn); await wait(500);
 const cutsNow = await DB.listCuts(sceneId);

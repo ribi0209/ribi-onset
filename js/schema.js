@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v17 · 2026-08-11';
+export const BUILD = 'v18 · 2026-08-11';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -500,6 +500,54 @@ export function displayName(entKey, r){
   const head = cfg.titleFields.map(k => r[k]).filter(Boolean).join(' · ');
   const sub  = (cfg.subtitleFields || []).map(k => r[k]).filter(Boolean).join(' · ');
   return [head, sub].filter(Boolean).join(' — ') || r.id;
+}
+
+/** 컷을 한 줄로 표기 — 'C1 / B캠' */
+export function cutLabel(c){
+  return `C${c.cutNo || '?'}${c.camUnit ? ' / ' + c.camUnit + '캠' : ''}`;
+}
+
+/**
+ * 모니터 사진에서 읽은 캠(A/B/…)을 보고 테이크를 어느 컷에 넣을지 후보를 만든다.
+ * 자동으로 꽂아넣지 않고 후보만 만드는 이유: 같은 캠으로 여러 컷을 찍기 때문에
+ * 클립 번호만으로는 컷 경계를 알 수 없다. 마지막 컷을 기본값으로 제안하고 사람이 확인한다.
+ *
+ * @param {Array}  cuts     이 씬의 컷 (컷번호 → 캠 순 정렬)
+ * @param {string} camUnit  'A' / 'B' / '' (판독 실패)
+ * @returns {{targets:Array<{value:string,label:string}>, defaultTarget:string}}
+ *          value 는 컷 id / 'pair:<컷id>'(동시 촬영 짝 생성) / '__new'
+ */
+export function planMonitorTake(cuts, camUnit){
+  const cam = String(camUnit || '').toUpperCase();
+  const of = (c) => String(c.camUnit || '').toUpperCase();
+  const targets = [];
+
+  // 1) 같은 캠으로 이미 찍고 있던 컷 — 가장 흔한 경우
+  const sameCam = cam ? cuts.filter(c => of(c) === cam) : cuts.slice();
+  for (const c of sameCam) targets.push({ value:c.id, label:`${cutLabel(c)} 에 테이크 추가` });
+
+  // 2) 다른 캠 컷과 동시 촬영으로 묶기 — 같은 컷 번호·슬레이트의 짝을 새로 만든다
+  const seen = new Set();
+  if (cam){
+    for (const c of cuts){
+      if (of(c) === cam || seen.has(c.cutNo)) continue;
+      if (cuts.some(x => x.cutNo === c.cutNo && of(x) === cam)) continue;
+      seen.add(c.cutNo);
+      targets.push({ value:'pair:'+c.id, label:`${cutLabel(c)} 과 동시 — ${cam}캠 컷 새로 생성` });
+    }
+  }
+
+  // 3) 새 컷
+  targets.push({ value:'__new', label: cam ? `새 컷 만들기 (${cam}캠)` : '새 컷 만들기' });
+
+  // 4) 나머지 컷 (다른 캠에 잘못 들어간 걸 바로잡을 때)
+  for (const c of cuts) if (!targets.some(t => t.value === c.id))
+    targets.push({ value:c.id, label:`${cutLabel(c)} 에 테이크 추가` });
+
+  const pair = targets.find(t => String(t.value).startsWith('pair:'));
+  const defaultTarget = sameCam.length ? sameCam[sameCam.length - 1].id
+                      : (pair ? pair.value : '__new');
+  return { targets, defaultTarget };
 }
 
 export function allFields(ent){ return ENTITIES[ent].groups.flatMap(g => g.fields); }

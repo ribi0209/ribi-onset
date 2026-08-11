@@ -119,5 +119,55 @@ console.log('== 컷: A/B캠 동시 촬영 ==');
   ok(nos.join(',') === '1,2', `컷 번호가 1,2 로 증가 (${nos.join(',')})`);
 }
 
+console.log('== 모니터 촬영 → 어느 컷에 넣을지 판단 ==');
+{
+  const { planMonitorTake } = await import('../js/schema.js');
+
+  // 아직 컷이 없는 상태 — B027 을 찍었다
+  {
+    const { targets, defaultTarget } = planMonitorTake([], 'B');
+    ok(defaultTarget === '__new', '컷이 없으면 새 컷이 기본값');
+    ok(targets.length === 1 && targets[0].label.includes('B캠'), `후보 1개 (${targets[0].label})`);
+  }
+
+  // A캠 C1 만 있는 상태에서 B027 을 찍었다 → "C1 과 동시" 가 기본값이어야 한다
+  {
+    const cuts = [{ id:'CUT-A1', cutNo:'1', camUnit:'A', slate:'1-1' }];
+    const { targets, defaultTarget } = planMonitorTake(cuts, 'B');
+    ok(defaultTarget === 'pair:CUT-A1', `A캠 C1 이 있으면 동시 촬영이 기본값 (${defaultTarget})`);
+    ok(targets[0].label.includes('동시'), `첫 후보 = ${targets[0].label}`);
+    ok(targets.some(t => t.value === '__new'), '새 컷 만들기도 선택 가능');
+  }
+
+  // A/B 짝이 이미 있는 상태에서 B027 을 또 찍었다 → 그 B캠 컷에 테이크 추가가 기본값
+  {
+    const cuts = [
+      { id:'CUT-A1', cutNo:'1', camUnit:'A', slate:'1-1' },
+      { id:'CUT-B1', cutNo:'1', camUnit:'B', slate:'1-1' },
+    ];
+    const { targets, defaultTarget } = planMonitorTake(cuts, 'B');
+    ok(defaultTarget === 'CUT-B1', `이어 찍으면 같은 B캠 컷에 추가 (${defaultTarget})`);
+    ok(!targets.some(t => t.value === 'pair:CUT-A1'), '이미 짝이 있으면 동시 생성 후보를 만들지 않음');
+  }
+
+  // 같은 캠 컷이 여러 개면 마지막 것이 기본값
+  {
+    const cuts = [
+      { id:'CUT-B1', cutNo:'1', camUnit:'B' },
+      { id:'CUT-B2', cutNo:'2', camUnit:'B' },
+    ];
+    const { defaultTarget } = planMonitorTake(cuts, 'B');
+    ok(defaultTarget === 'CUT-B2', `가장 최근 컷이 기본값 (${defaultTarget})`);
+  }
+
+  // 캠 롤을 못 읽었을 때 — 억지로 캠을 정하지 않고 기존 컷 중에서 고르게 한다
+  {
+    const cuts = [{ id:'CUT-A1', cutNo:'1', camUnit:'A' }];
+    const { targets, defaultTarget } = planMonitorTake(cuts, '');
+    ok(defaultTarget === 'CUT-A1', '판독 실패 시 마지막 컷이 기본값');
+    ok(!targets.some(t => String(t.value).startsWith('pair:')), '캠을 모르면 동시 촬영 후보를 만들지 않음');
+  }
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

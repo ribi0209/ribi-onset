@@ -114,7 +114,7 @@ function snapNum(value, list){
 
 /**
  * @param {string} raw   OCR 원문
- * @param {object} refs  { fps, shutters, tStops, isoEi, whiteBalance, ndFilters } (선택)
+ * @param {object} refs  { fps, shutters, tStops, isoEi, whiteBalance, ndFilters, focalLengths } (선택)
  * @returns {object}     테이크 필드 후보 + 원문 스니펫
  */
 export function parseMonitor(raw, refs = {}){
@@ -167,9 +167,11 @@ export function parseMonitor(raw, refs = {}){
    || t.match(/\b(\d{2}:\d{2}:\d{2}[:;]\d{2})\b/);
   if (m) out.tc = m[1].replace(/\s/g,'').replace(/;/g, ':');
 
-  // 렌즈 초점거리 (오버레이에 있으면)
-  m = t.match(/\b(\d{2,3})\s?mm\b/i);
-  if (m) out.lens = m[1] + 'mm';
+  // 렌즈 초점거리 — ARRI 는 하단에 'FCL 75.0mm' 로 뜬다 (렌즈 없으면 'FCL -')
+  // 소수점이 붙으므로 \d{2,3}mm 만으로는 잡히지 않는다
+  m = t.match(/\bF\s?C\s?[LI1]\s*[:=]?\s*(\d{1,3})(?:\.\d+)?\s*m\s?m\b/i)
+   || t.match(/\b(\d{1,3})(?:\.\d+)?\s?m\s?m\b/i);
+  if (m) out.lens = snap(m[1] + 'mm', refs.focalLengths, s => s.toLowerCase().replace(/\s/g,''));
 
   return out;
 }
