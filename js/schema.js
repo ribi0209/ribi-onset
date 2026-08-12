@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v19 · 2026-08-11';
+export const BUILD = 'v20 · 2026-08-12';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -213,18 +213,18 @@ export const ENTITIES = {
       { k:'tod',     ref:'tod',      label:'시제' },
       { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
-    listCols:['episode','scene','unit','locationId','intExt','tod','vendor'],
+    listCols:['episode','scene','__cams','locationId','intExt','tod','vendor'],
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
              'locationId','vendor','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
       /* 4열 고정 — 썸네일이 왼쪽에서 3행을 관통한다
-         1행: 에피소드 · 씬 · 촬영유닛      2행: 캠 롤 · 클립 · 로케이션
+         1행: 에피소드 · 씬 · 촬영유닛(캠별)  2행: 캠 롤 · 클립 · 로케이션
          3행: INT/EXT · 시제 · 벤더         4행: 촬영일 · 촬영시각 · 에셋 · HDRI */
       { title:'기본정보', cols:4, fields:[
         { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
         { k:'scene',   label:'씬',       t:'combo', ref:'scenes', span:1 },
-        { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1 },
+        { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1, cam:true },
         { k:'camRoll', label:'캠 롤', t:'text', span:1, cam:true },
         { k:'clip',    label:'클립',  t:'text', span:1, cam:true },
         { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:1 },
@@ -508,7 +508,9 @@ export function displayName(entKey, r){
 
 /**
  * 리스트·인쇄에 쓸 대표 이미지.
- * 캠 탭이 있는 엔티티는 이미지가 캠별로 흩어져 있으므로 값이 있는 첫 캠을 쓴다.
+ * 캠 탭이 있는 엔티티는 이미지가 캠별로 흩어져 있다.
+ * 선언 순서(A → B → C → D)대로 훑어서 먼저 나오는 것을 쓴다.
+ * 즉 A 에 이미지가 있으면 무조건 A 가 대표가 된다.
  * (구 데이터는 레코드 최상단에 있으므로 그것도 함께 본다)
  */
 export function thumbOf(entKey, r){
@@ -522,6 +524,12 @@ export function thumbOf(entKey, r){
   }
   const own = r[cfg.thumbField];
   return (own && own.mid) ? own : null;
+}
+
+/** 어느 캠에든 들어 있는 특정 키의 값들 (필터·검색용) */
+export function camValues(cfg, r, key){
+  if (!Array.isArray(cfg.cams) || !r || !r.cams) return [];
+  return cfg.cams.map(c => (r.cams[c] || {})[key]).filter(Boolean);
 }
 
 /** 캠별 기록을 한 줄로 — 'A: A027 C002 · B: B027 C001' */
@@ -602,6 +610,7 @@ export function labelOf(ent, key){
   const f = fieldMap(ent)[key];
   if (f) return f.label;
   return { id:'ID', sceneId:'씬 ID', episode:'에피소드', scene:'씬',
+           __cams:'캠 기록',
            takeCount:'테이크 수', okTakes:'OK 테이크',
            createdAt:'생성', updatedAt:'수정' }[key] || key;
 }

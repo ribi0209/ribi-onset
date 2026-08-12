@@ -49,8 +49,8 @@ async function exportSceneCutCSV(scenes, p){
   // 씬 CSV 는 캠(A~D) 단위로 펼쳐 내보낸다 — 한 줄 = 한 카메라의 기록
   const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
 
-  const head = ['씬 ID','에피소드','씬','촬영 유닛','촬영일','촬영시각','INT/EXT','시제','로케이션','벤더',
-                '캠','캠 롤','클립','사진 수','씬 노트','메모'];
+  const head = ['씬 ID','에피소드','씬','촬영일','촬영시각','INT/EXT','시제','로케이션','벤더',
+                '캠','촬영 유닛','캠 롤','클립','사진 수','씬 노트','메모'];
   const lines = [head.map(csvCell).join(',')];
 
   const sorted = scenes.slice().sort((a,b) =>
@@ -59,11 +59,11 @@ async function exportSceneCutCSV(scenes, p){
 
   let n = 0;
   for (const s of sorted){
-    const base = [s.id, s.episode, s.scene, s.unit, s.shootDate, s.shootTime,
+    const base = [s.id, s.episode, s.scene, s.shootDate, s.shootTime,
                   s.intExt, s.tod, locName[s.locationId] || s.legacyLocationName || '', s.vendor];
     const cams = usedCams('scenes', s);
     if (!cams.length){
-      lines.push([...base, '', '', '', 0, s.shotNote, s.extraNote].map(csvCell).join(','));
+      lines.push([...base, '', '', '', '', 0, s.shotNote, s.extraNote].map(csvCell).join(','));
       n++;
       continue;
     }
@@ -71,7 +71,7 @@ async function exportSceneCutCSV(scenes, p){
       const d = (s.cams || {})[c] || {};
       const nPhoto = (d.thumbnail && d.thumbnail.mid ? 1 : 0)
                    + (Array.isArray(d.photos) ? d.photos.filter(x => x && x.mid).length : 0);
-      lines.push([...base, c, d.camRoll, d.clip, nPhoto, s.shotNote, s.extraNote].map(csvCell).join(','));
+      lines.push([...base, c, d.unit, d.camRoll, d.clip, nPhoto, s.shotNote, s.extraNote].map(csvCell).join(','));
       n++;
     }
   }
@@ -171,6 +171,7 @@ export async function exportBreakdown(scenes){
       camRows.push(el('tr', {}, [
         el('td', { class:'pcell-img' }, [ curl ? el('img', { src:curl }) : el('span',{class:'dim',text:'—'}) ]),
         el('td', {}, [ el('span', { class:'bd-badge', text:c + '캠' }) ]),
+        el('td', { text:d.unit || '' }),
         el('td', { text:d.camRoll || '' }),
         el('td', { text:d.clip || '' }),
         el('td', { text: nPhoto ? nPhoto + '장' : '—' }),
@@ -195,7 +196,6 @@ export async function exportBreakdown(scenes){
         el('code', { class:'bd-id', text:s.id }),
         el('dl', { class:'bd-kv' }, [
           ['촬영', [s.shootDate, s.shootTime].filter(Boolean).join(' ')],
-          ['유닛', s.unit],
           ['공간', [s.intExt, s.tod, locName[s.locationId] || s.legacyLocationName].filter(Boolean).join(' · ')],
           ['벤더', s.vendor],
           ['연결', links],
@@ -203,7 +203,7 @@ export async function exportBreakdown(scenes){
         s.shotNote  ? el('p', { class:'bd-note' }, [ el('b',{text:'씬 노트 '}), document.createTextNode(s.shotNote) ]) : null,
         s.extraNote ? el('p', { class:'bd-note' }, [ el('b',{text:'메모 '}),   document.createTextNode(s.extraNote) ]) : null,
         camRows.length ? el('table', { class:'ptable bd-cuts' }, [
-          el('thead', {}, [ el('tr', {}, ['','캠','캠 롤','클립','사진']
+          el('thead', {}, [ el('tr', {}, ['','캠','유닛','캠 롤','클립','사진']
             .map(h => el('th', { text:h }))) ]),
           el('tbody', {}, camRows)
         ]) : el('p', { class:'bd-note dim', text:'기록된 캠 없음' }),

@@ -5,7 +5,7 @@
 import * as DB from './db.js';
 import { NAV, ENTITY_ROUTES, ENTITIES, BUILD } from './schema.js';
 import { el, $, clear, toast, setRefsCache } from './ui.js';
-import { entityListView, entityDetailView, projectView, overviewView, settingsView, backupView } from './views.js';
+import { entityListView, entityDetailView, projectView, overviewView, settingsView, backupView, flushAll } from './views.js';
 
 /** '#/locations/LOC-1234' → { k:'locations', id:'LOC-1234' }
  *
@@ -23,6 +23,8 @@ function currentRoute(){ return parseRoute(location.hash); }
 function go(path){ location.hash = '#/' + path; }
 
 async function render(){
+  // 화면을 바꾸기 전에 입력 중이던 내용을 먼저 기록한다
+  await flushAll();
   const { k, id } = currentRoute();
   for (const b of document.querySelectorAll('.nav-btn')) b.classList.toggle('on', b.dataset.k === k);
   const main = $('#main');

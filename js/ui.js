@@ -657,7 +657,9 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
           }
           onDirty && onDirty();
         });
-        inp.addEventListener('input', () => { R[f.k] = inp.value; });
+        // 타이핑 중에도 자동 저장을 걸어야 한다.
+        // change(포커스 이탈) 때만 저장하면, 입력하고 바로 탭/화면을 옮길 때 값이 사라진다.
+        inp.addEventListener('input', () => { R[f.k] = inp.value; onDirty && onDirty(); });
         cell.appendChild(inp);
 
       } else if (f.t === 'textarea'){

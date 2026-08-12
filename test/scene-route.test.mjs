@@ -121,5 +121,83 @@ console.log('== 캠 탭 전환 ==');
      `탭에 캠 롤·클립 요약 (${tabs2[2].querySelector('.cam-sub').textContent})`);
 }
 
+console.log('== 촬영 유닛은 캠별로 독립 ==');
+{
+  const main = w.document.getElementById('main');
+  const scene = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
+  await wait(300);
+
+  const unitInput = () => Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent.startsWith('촬영 유닛'))
+    .querySelector('input');
+  const tab = (i) => main.querySelectorAll('.cam-tab')[i];
+
+  // 현재 열려 있는 탭(C: 값이 있어 기본 선택) 대신 A 부터 시작한다
+  tab(0).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  const ua = unitInput();
+  ua.value = 'A'; ua.dispatchEvent(new w.Event('input',{bubbles:true}));
+  await wait(700);
+
+  tab(1).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  ok(unitInput().value === '', `A 에서 유닛을 바꿔도 B 는 비어 있음 (${JSON.stringify(unitInput().value)})`);
+  const ub = unitInput();
+  ub.value = 'B'; ub.dispatchEvent(new w.Event('input',{bubbles:true}));
+  await wait(700);
+
+  const rec = await DB.get('scenes', scene.id);
+  ok(rec.cams.A.unit === 'A' && rec.cams.B.unit === 'B',
+     `A/B 유닛이 각각 저장 (A=${rec.cams.A.unit} B=${rec.cams.B.unit})`);
+  ok(!('unit' in rec), '레코드 최상단에 유닛이 남지 않음');
+
+  tab(0).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  ok(unitInput().value === 'A', 'A 로 돌아오면 A 값 그대로');
+}
+
+console.log('== 목록: 캠 기록 열 / 대표 이미지 A 우선 ==');
+{
+  const main = w.document.getElementById('main');
+  await V.entityListView(main, 'scenes', ()=>{});
+  await wait(300);
+  const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
+  ok(!ths.includes('촬영 유닛'), `목록에 촬영 유닛 열 없음 (${ths.join('/')})`);
+  ok(ths.includes('캠 기록'), '캠 기록 열 존재');
+  // 썸네일·NO 다음이 에피소드·씬·캠기록 순이어야 한다 (촬영 유닛이 있던 자리)
+  ok(ths[2]==='에피소드' && ths[3]==='씬' && ths[4]==='캠 기록',
+     `캠 기록이 촬영 유닛 자리에 (${ths.slice(2,6).join(' / ')})`);
+
+  const { thumbOf } = await import('../js/schema.js');
+  const mk = (cams) => ({ cams });
+  ok(thumbOf('scenes', mk({ A:{thumbnail:{mid:'mA'}}, B:{thumbnail:{mid:'mB'}} })).mid === 'mA',
+     'A 와 B 둘 다 있으면 A 가 대표');
+  ok(thumbOf('scenes', mk({ A:{}, B:{thumbnail:{mid:'mB'}} })).mid === 'mB',
+     'A 가 비어 있으면 다음 캠으로');
+  ok(thumbOf('scenes', mk({ A:{}, B:{}, C:{thumbnail:{mid:'mC'}} })).mid === 'mC',
+     'C 만 있으면 C');
+  ok(thumbOf('scenes', mk({ A:{}, B:{} })) === null, '아무 캠에도 없으면 null');
+}
+
+console.log('== 자동 저장 유실 방지 ==');
+{
+  // 실제로 났던 문제 두 가지
+  //  1) 콤보 입력은 포커스를 뺄 때만 저장돼서, 치고 바로 탭을 옮기면 값이 사라졌다
+  //  2) 화면을 떠날 때 대기 중인 저장을 "취소"해 버렸다 (이름은 flush 인데 버리고 있었다)
+  const main = w.document.getElementById('main');
+  const scene = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
+  await wait(300);
+
+  const sceneField = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent === '씬');
+  const inp = sceneField.querySelector('input');
+  inp.value = '7-3';
+  inp.dispatchEvent(new w.Event('input',{bubbles:true}));   // change 없이 input 만
+
+  // 저장 타이머(0.5초)가 돌기 전에 화면을 떠난다
+  await V.flushAll();
+  const rec = await DB.get('scenes', scene.id);
+  ok(rec.scene === '7-3', `콤보 입력이 즉시 커밋됨 (${rec.scene})`);
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

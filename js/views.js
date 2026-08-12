@@ -6,7 +6,7 @@
 import * as DB from './db.js';
 import {
   ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD,
-  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, usedCams
+  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, usedCams, camValues
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -24,20 +24,32 @@ function st(ent){
 
 /* ---------------- 자동 저장 ---------------- */
 
-const timers = new Map();
+const timers  = new Map();
+const pending = new Map();   // 아직 기록되지 않은 변경
+
 function autosave(store, rec, after){
   const key = store + ':' + rec.id;
   clearTimeout(timers.get(key));
-  timers.set(key, setTimeout(async () => {
-    await DB.put(store, rec);
-    const dot = $('#saveDot'); if (dot){ dot.classList.add('on'); setTimeout(()=>dot.classList.remove('on'), 900); }
-    timers.delete(key);
-    after && after();
-  }, 500));
+  pending.set(key, { store, rec, after });
+  timers.set(key, setTimeout(() => commit(key), 500));
 }
-async function flushAll(){
-  for (const [, t] of timers) clearTimeout(t);
-  timers.clear();
+
+async function commit(key){
+  const job = pending.get(key);
+  if (!job) return;
+  clearTimeout(timers.get(key));
+  timers.delete(key); pending.delete(key);
+  await DB.put(job.store, job.rec);
+  const dot = $('#saveDot'); if (dot){ dot.classList.add('on'); setTimeout(()=>dot.classList.remove('on'), 900); }
+  job.after && job.after();
+}
+
+/**
+ * 대기 중인 자동 저장을 전부 지금 기록한다. 화면을 떠나기 전에 부른다.
+ * 예전에는 타이머만 취소했는데, 그러면 입력 후 0.5초 안에 목록으로 나가면 그 변경이 사라졌다.
+ */
+export async function flushAll(){
+  for (const key of Array.from(pending.keys())) await commit(key);
 }
 
 /* ===================== 엔티티 : 리스트 페이지 ===================== */
@@ -82,7 +94,9 @@ export async function entityListView(root, entKey, go){
       if (typeof f.when === 'function' && !f.when(project)) continue;
       const sel = el('select', { class:'inp mini' });
       sel.appendChild(el('option', { value:'', text:f.label }));
-      const vals = Array.from(new Set([...(refList(f.ref)||[]), ...rows.map(r => r[f.k]).filter(Boolean)]));
+      const fd = fieldMap(entKey)[f.k];
+      const seen = rows.flatMap(r => fd && fd.cam ? camValues(cfg, r, f.k) : [r[f.k]]).filter(Boolean);
+      const vals = Array.from(new Set([...(refList(f.ref)||[]), ...seen]));
       for (const val of vals) sel.appendChild(el('option', { value:val, text:val }));
       sel.value = S.filters[f.k] || '';
       if (sel.value) sel.classList.add('on');
@@ -107,9 +121,19 @@ export async function entityListView(root, entKey, go){
   function filtered(){
     const q = (S.q || '').trim().toLowerCase();
     let out = rows.filter(r => {
-      for (const [k,val] of Object.entries(S.filters)) if (val && (r[k] || '') !== val) return false;
+      for (const [k,val] of Object.entries(S.filters)){
+        if (!val) continue;
+        const fd = fieldMap(entKey)[k];
+        // 캠별 필드는 어느 한 캠이라도 일치하면 통과시킨다
+        if (fd && fd.cam){ if (!camValues(cfg, r, k).includes(val)) return false; }
+        else if ((r[k] || '') !== val) return false;
+      }
       if (!q) return true;
-      return Object.entries(r).some(([k,val]) => typeof val === 'string' && val.toLowerCase().includes(q));
+      const hay = [
+        ...Object.values(r),
+        ...Object.values(r.cams || {}).flatMap(d => Object.values(d || {})),
+      ];
+      return hay.some(val => typeof val === 'string' && val.toLowerCase().includes(q));
     });
     const key = (r) => cfg.titleFields.map(k => r[k] || '').join('|');
     if (S.sort === 'new')  out.sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
@@ -131,7 +155,8 @@ export async function entityListView(root, entKey, go){
       refMaps[k] = Object.fromEntries((await DB.list(f.to)).map(r => [r.id, displayName(f.to, r)]));
     }
   }
-  const cellText = (r, k) => refMaps[k] ? (refMaps[k][r[k]] || '') : r[k];
+  const cellText = (r, k) => k === '__cams' ? camSummaryLine(entKey, r)
+                           : refMaps[k] ? (refMaps[k][r[k]] || '') : r[k];
 
   const tableWrap = el('div', { class:'table-wrap' });
   const countEl = el('div', { class:'dim tiny count' });
@@ -150,7 +175,6 @@ export async function entityListView(root, entKey, go){
         el('th', { class:'c-no', text:'NO' }),
         el('th', { class:'c-thumb', text:'썸네일' }),
         ...cols.map(k => el('th', { text: labelOf(entKey, k) })),
-        cfg.cams ? el('th', { text:'캠 기록' }) : null,
         el('th', { class:'c-go' }),
       ])]),
       body
@@ -169,12 +193,10 @@ export async function entityListView(root, entKey, go){
 
       const tds = cols.map((k, idx) => {
         const txt = cellText(r, k);
-        return el('td', { class: idx === 0 ? 'strong' : (txt ? '' : 'dim'), text: txt || '—' });
+        const cls = k === '__cams' ? (txt ? 'mono tiny' : 'dim')
+                  : idx === 0 ? 'strong' : (txt ? '' : 'dim');
+        return el('td', { class: cls, text: txt || '—' });
       });
-      if (cfg.cams){
-        const line = camSummaryLine(entKey, r);
-        tds.push(el('td', { class: line ? 'mono tiny' : 'dim', text: line || '—' }));
-      }
 
       body.appendChild(el('tr', {
         class:'drow', onclick: () => go(`${entKey}/${r.id}`)
@@ -310,7 +332,16 @@ async function makeRecord(entKey, cfg, project, rows){
   }
   if (cfg.inherit && rows && rows.length){
     const last = rows.slice().sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''))[0];
-    if (last) for (const k of cfg.inherit) if (last[k]) base[k] = last[k];
+    const fm = fieldMap(entKey);
+    if (last) for (const k of cfg.inherit){
+      // 캠별 필드는 같은 캠끼리 물려받는다 (A캠 유닛 → A캠 유닛)
+      if (fm[k] && fm[k].cam && Array.isArray(cfg.cams)){
+        for (const c of cfg.cams){
+          const v = ((last.cams || {})[c] || {})[k];
+          if (v) base.cams[c][k] = v;
+        }
+      } else if (last[k]) base[k] = last[k];
+    }
   }
   base.id = (entKey === 'scenes') ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix || 'REC');
   if (cfg.autoStamp){

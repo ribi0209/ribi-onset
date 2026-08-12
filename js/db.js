@@ -179,6 +179,31 @@ async function postMigrate(){
   await linkScenesToLocations();
   await moveHdriLinksToScenes();
   await migrateSceneCams();
+  await migrateSceneUnitToCams();
+}
+
+/**
+ * 촬영 유닛이 씬 공통에서 캠별 값으로 바뀌었다.
+ * 예전에는 씬 하나에 유닛 하나였으므로, 그 값을 모든 캠에 복사한 뒤 최상단에서 지운다.
+ * (지우지 않으면 화면에 안 보이는 값이 백업에만 남아 나중에 혼란을 준다)
+ */
+export async function migrateSceneUnitToCams(){
+  const CAMS = (ENTITIES.scenes && ENTITIES.scenes.cams) || ['A','B','C','D'];
+  const scenes = await wrap(tx(['scenes']).objectStore('scenes').getAll());
+  let n = 0;
+  for (const s of scenes){
+    if (!('unit' in s)) continue;
+    const v = s.unit;
+    if (!s.cams) s.cams = {};
+    for (const c of CAMS){
+      if (!s.cams[c]) s.cams[c] = {};
+      if (v && !s.cams[c].unit) s.cams[c].unit = v;
+    }
+    delete s.unit;
+    await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -865,6 +890,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   await linkScenesToLocations();
   await moveHdriLinksToScenes();
   await migrateSceneCams();
+  await migrateSceneUnitToCams();
 
   if (mode === 'merge'){ onProgress('미사용 이미지 정리', 98); await gcMedia(); }
   await setCurrentProject(firstPid);
