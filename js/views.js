@@ -454,15 +454,12 @@ export async function entityDetailView(root, entKey, id, go){
     if (!rec.cams || typeof rec.cams !== 'object') rec.cams = {};
     for (const c of cfg.cams) if (!rec.cams[c]) rec.cams[c] = {};
 
-    let active = firstUsedCam(cfg, rec);
+    // 탭 표시와 물량 집계가 어긋나면 안 되므로 판정은 usedCams 하나만 쓴다
+    const used = () => usedCams(entKey, rec);
+    const hasData = (c) => used().includes(c);
+    let active = used()[0] || cfg.cams[0];
     const tabBar = el('div', { class:'cam-tabs' });
     const formHost = el('div', { class:'cam-body' });
-
-    const hasData = (c) => {
-      const d = rec.cams[c] || {};
-      return !!(d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)
-             || (Array.isArray(d.photos) && d.photos.some(x => x && x.mid)));
-    };
 
     async function drawForm(){
       clear(formHost);
@@ -501,15 +498,6 @@ export async function entityDetailView(root, entKey, id, go){
   }
 
   pane.scrollTop = 0;
-}
-
-/** 값이 들어 있는 첫 캠. 없으면 첫 번째 캠. */
-function firstUsedCam(cfg, rec){
-  for (const c of cfg.cams){
-    const d = (rec.cams || {})[c] || {};
-    if (d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)) return c;
-  }
-  return cfg.cams[0];
 }
 
 /** 탭에 곁들일 한 줄 요약 — 'A027 C002' */

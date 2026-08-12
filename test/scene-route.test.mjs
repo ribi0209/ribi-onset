@@ -289,5 +289,42 @@ console.log('== VFX 작업 타입 (캠별) ==');
   ok(hdris.every(h => !('linkedScene' in h)), 'HDRI 쪽 연결 씬도 제거됨');
 }
 
+console.log('== 찍지 않은 캠은 세지 않는다 ==');
+{
+  const { usedCams } = await import('../js/schema.js');
+
+  // 촬영 유닛은 직전 씬에서 자동 상속된다 → 이것만으로는 "찍은 캠"이 아니다
+  ok(usedCams('scenes', { cams:{ A:{unit:'A'}, B:{unit:'A'}, C:{unit:'A'}, D:{unit:'A'} } }).length === 0,
+     '유닛만 채워진 캠은 기록 아님');
+  ok(usedCams('scenes', { cams:{ A:{unit:'A',camRoll:'A027'}, B:{unit:'A'}, C:{unit:'A'}, D:{unit:'A'} } })
+       .join('') === 'A',
+     'v20 유닛 복사가 남아 있어도 실제로 찍은 A 만 셈');
+  // 실제 촬영 흔적은 전부 근거가 된다
+  for (const [k, v] of [['camRoll','A027'], ['clip','C001'], ['vfxType','3D']])
+    ok(usedCams('scenes', { cams:{ A:{[k]:v}, B:{}, C:{}, D:{} } }).join('') === 'A', `${k} 만 있어도 기록으로 셈`);
+  ok(usedCams('scenes', { cams:{ A:{thumbnail:{mid:'m1'}}, B:{}, C:{}, D:{} } }).join('') === 'A',
+     '모니터 사진만 있어도 기록');
+
+  // 이미 뿌려진 데이터 복구
+  const p = await DB.getProject();
+  const bad = { id: DB.makeSceneId(p.name)+'FAN', projectId: p.id, scene:'9-9',
+                cams:{ A:{unit:'A',camRoll:'A100'}, B:{unit:'A'}, C:{unit:'A'}, D:{unit:'A'} } };
+  await DB.put('scenes', bad);
+  const fixed = await DB.repairCamUnitFanout(true);
+  const got = await DB.get('scenes', bad.id);
+  ok(fixed >= 1, `복구 대상 ${fixed}건`);
+  ok(got.cams.A.unit === 'A', '찍은 캠의 유닛은 남는다');
+  ok(!got.cams.B.unit && !got.cams.C.unit && !got.cams.D.unit,
+     `안 찍은 캠의 유닛은 지운다 (B=${got.cams.B.unit} C=${got.cams.C.unit} D=${got.cams.D.unit})`);
+
+  // 사람이 서로 다른 유닛을 넣은 경우는 건드리지 않는다
+  const mine = { id: DB.makeSceneId(p.name)+'MINE', projectId: p.id, scene:'9-8',
+                 cams:{ A:{unit:'A'}, B:{unit:'B'}, C:{}, D:{} } };
+  await DB.put('scenes', mine);
+  await DB.repairCamUnitFanout(true);
+  const got2 = await DB.get('scenes', mine.id);
+  ok(got2.cams.A.unit === 'A' && got2.cams.B.unit === 'B', '값이 서로 다르면 사람 입력 → 보존');
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v22 · 2026-08-12';
+export const BUILD = 'v23 · 2026-08-12';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -224,7 +224,9 @@ export const ENTITIES = {
         { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
         { k:'scene',   label:'씬',       t:'combo', ref:'scenes', span:1 },
-        { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1, cam:true },
+        // soft:true — 값이 있어도 "이 캠으로 찍었다"의 근거가 되지 않는다.
+        // 유닛은 직전 씬에서 자동 상속되므로, 이걸로 세면 찍지도 않은 캠이 물량에 잡힌다.
+        { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1, cam:true, soft:true },
         { k:'camRoll', label:'캠 롤', t:'text', span:1, cam:true },
         { k:'clip',    label:'클립',  t:'text', span:1, cam:true },
         { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:1 },
@@ -546,14 +548,17 @@ export function camSummaryLine(entKey, r){
 }
 
 /**
- * 값이 들어 있는 캠 목록.
- * 어떤 필드를 봐야 하는지 하드코딩하지 않고 스키마의 cam:true 필드를 전부 훑는다.
- * (예전에 캠 롤·클립·사진만 보다가, 작업 타입만 지정한 캠이 물량 집계에서 빠졌다)
+ * "실제로 이 캠으로 찍었다"고 볼 수 있는 캠 목록. 캠 기록 수 · VFX 물량이 이걸로 센다.
+ *
+ * 판정에 쓰는 필드는 스키마에서 정한다 — cam:true 이면서 soft 가 아닌 것.
+ *  - 하드코딩하면 필드가 늘 때마다 빠뜨린다 (작업 타입이 그래서 물량에서 누락됐었다)
+ *  - 반대로 전부 세면 상속으로 자동 채워지는 값(촬영 유닛)까지 근거가 돼서
+ *    찍지도 않은 캠이 잡힌다 → 그런 필드는 soft:true 로 뺀다
  */
 export function usedCams(entKey, r){
   const cfg = ENTITIES[entKey];
   if (!Array.isArray(cfg.cams) || !r || !r.cams) return [];
-  const keys = allFields(entKey).filter(f => f.cam);
+  const keys = allFields(entKey).filter(f => f.cam && !f.soft);
   const filled = (v) => {
     if (!v) return false;
     if (Array.isArray(v)) return v.some(x => x && x.mid);

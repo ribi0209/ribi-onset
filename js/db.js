@@ -180,6 +180,52 @@ async function postMigrate(){
   await dropSceneHdriLinks();
   await migrateSceneCams();
   await migrateSceneUnitToCams();
+  await repairCamUnitFanout();
+}
+
+/**
+ * v20 의 유닛 이관 버그 복구.
+ *
+ * 그때는 씬 공통 유닛을 A~D 네 캠 모두에 복사했다. 그 뒤 캠 기록 판정이
+ * "캠 필드 중 아무거나 값이 있으면" 으로 바뀌면서, 찍지도 않은 C·D 가 기록으로 잡혔다.
+ * 이미 지나간 마이그레이션이라 옛 코드를 고쳐도 그 데이터는 그대로다 → 여기서 되돌린다.
+ *
+ * 지우는 대상은 "유닛 말고는 아무것도 없는 캠이 둘 이상이고, 값이 전부 같을 때" 뿐이다.
+ * 값이 서로 다르면 사람이 넣은 것이므로 건드리지 않는다.
+ */
+export async function repairCamUnitFanout(force = false){
+  if (!force){
+    const flag = await wrap(tx(['kv']).objectStore('kv').get('unitFanoutRepaired'));
+    if (flag && flag.value) return 0;
+  }
+
+  const CAMS = (ENTITIES.scenes && ENTITIES.scenes.cams) || ['A','B','C','D'];
+  const scenes = await wrap(tx(['scenes']).objectStore('scenes').getAll());
+  let n = 0;
+
+  for (const s of scenes){
+    if (!s.cams) continue;
+    // 유닛을 뺀 실제 촬영 흔적
+    const shot = (c) => {
+      const d = s.cams[c] || {};
+      return !!(d.camRoll || d.clip || d.vfxType || (d.thumbnail && d.thumbnail.mid)
+             || (Array.isArray(d.photos) && d.photos.some(x => x && x.mid)));
+    };
+    const unitOnly = CAMS.filter(c => (s.cams[c] || {}).unit && !shot(c));
+    if (unitOnly.length < 2) continue;
+    if (new Set(unitOnly.map(c => s.cams[c].unit)).size !== 1) continue;
+
+    // 찍은 캠이 있으면 유닛은 거기에만 남으면 된다. 없으면 첫 캠 하나만 남긴다.
+    const keep = CAMS.some(shot) ? null : unitOnly[0];
+    let dirty = false;
+    for (const c of unitOnly) if (c !== keep){ delete s.cams[c].unit; dirty = true; }
+    if (dirty){
+      await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+      n++;
+    }
+  }
+  await wrap(tx(['kv'],'readwrite').objectStore('kv').put({ key:'unitFanoutRepaired', value:true }));
+  return n;
 }
 
 /**
@@ -896,6 +942,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   await dropSceneHdriLinks();
   await migrateSceneCams();
   await migrateSceneUnitToCams();
+  await repairCamUnitFanout(true);   // 가져온 데이터는 플래그와 무관하게 한 번 훑는다
 
   if (mode === 'merge'){ onProgress('미사용 이미지 정리', 98); await gcMedia(); }
   await setCurrentProject(firstPid);
