@@ -89,6 +89,12 @@ select.inp{ appearance:none; padding-right:26px;
   background-size:5px 5px,5px 5px; background-repeat:no-repeat; }
 select.inp.mini{ background-position:calc(100% - 12px) 15px, calc(100% - 7px) 15px; }
 select.inp.on{ border-color:var(--accent); color:var(--accent); }
+/* 화살표 자리를 반드시 비워 둔다.
+   .inp.mini / .inp.cell 의 padding 축약형이 select.inp 의 padding-right 를 덮어써서
+   (클래스 2개라 우선순위가 높다) 글자가 화살표 밑으로 파고들었다.
+   여기서 셀렉트 전용으로 다시 지정해 되돌린다. */
+select.inp.mini{ padding-right:26px; }
+select.inp.cell{ padding-right:22px; }
 
 .row{ display:flex; align-items:center; }
 .row.gap{ gap:8px; }
@@ -172,7 +178,12 @@ select.inp.on{ border-color:var(--accent); color:var(--accent); }
 }
 
 /* ---------- 칩 / 링크 ---------- */
-.chips,.link-wrap{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+.chips{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+/* 연결 위젯: 칩 줄 + 추가 드롭다운을 세로로 쌓아 옆 칸과 폭·높이를 맞춘다 */
+.link-wrap{ display:flex; flex-direction:column; gap:6px; align-items:stretch; }
+.link-wrap .row{ gap:6px; }
+.link-wrap .row > select{ flex:1; min-width:0; }
+.link-wrap.backlink{ flex-direction:row; flex-wrap:wrap; gap:5px; align-items:center; }
 .chip{
   display:inline-flex; align-items:center; gap:5px; padding:3px 6px 3px 10px;
   border-radius:20px; background:var(--bg3); border:1px solid var(--line); font-size:13px;
