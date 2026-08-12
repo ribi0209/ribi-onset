@@ -313,6 +313,22 @@ body.printing #printroot{
 .sec-head h2, .sec-head h4{ margin:0; }
 .grow{ flex:1; }
 
+/* ---------- 콤보 (드롭다운 + 직접 입력) ---------- */
+.combo{ display:flex; gap:4px; align-items:center; width:100%; }
+.combo > select, .combo > input{ flex:1; min-width:0; }
+.combo-back{ flex:0 0 auto; min-width:34px; padding:0 8px; }
+
+/* ---------- 표 정렬 ---------- */
+.dtable th.sortable{
+  cursor:pointer; user-select:none; white-space:nowrap;
+}
+.dtable th.sortable:hover{ color:var(--fg); }
+.dtable th.sortable .sort-ar{
+  font-style:normal; font-size:9px; margin-left:4px; opacity:.35; vertical-align:1px;
+}
+.dtable th.sortable.on{ color:var(--accent); }
+.dtable th.sortable.on .sort-ar{ opacity:1; }
+
 /* ---------- 캠(A~D) 탭 ---------- */
 .cam-tabs{
   display:flex; align-items:stretch; gap:6px; margin:10px 0 12px;

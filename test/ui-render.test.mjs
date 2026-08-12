@@ -68,7 +68,7 @@ ok(!main.querySelector('.split'), '좌우 분할 레이아웃 제거됨');
 ok(!!main.querySelector('.page-head'), '페이지 헤더');
 ok(!!main.querySelector('.eyebrow'), '섹션 번호 eyebrow');
 ok(!!main.querySelector('table.dtable'), '표 형태 리스트');
-const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
+const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>(t.querySelector('span')||t).textContent);
 ok(ths[0]==='NO' && ths[1]==='썸네일', `표 헤더 시작 ${ths.slice(0,2).join(' / ')}`);
 ok(ths.includes('캠 기록'), '씬 표에 캠 기록 열');
 const drows = main.querySelectorAll('tr.drow');
@@ -210,15 +210,20 @@ console.log('== 새 기본값 / 조건부 필드 ==');
   const p = await DB.getProject(); p.type='드라마'; await DB.setProject(p);
   const one = (await DB.list('scenes'))[0];
   await V.entityDetailView(main,'scenes',one.id,()=>{}); await wait(300);
-  ok(!!main.querySelector('input[list="dl-episodes"]'), '드라마 → 에피소드 입력란 있음');
+  const epField = () => Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent === '에피소드');
+  ok(!!epField(), '드라마 → 에피소드 칸 있음');
+  ok(!!epField().querySelector('.combo select'), '콤보는 드롭다운(select) 으로 렌더');
   ok(!main.textContent.includes('상태'), '씬 폼에서 상태 제거');
   await V.entityListView(main,'scenes',()=>{}); await wait(200);
-  ok(Array.from(main.querySelectorAll('.dtable thead th')).some(t=>t.textContent==='에피소드'), '드라마 → 표에 에피소드 열');
+  ok(Array.from(main.querySelectorAll('.dtable thead th')).some(t=>(t.querySelector('span')||t).textContent==='에피소드'), '드라마 → 표에 에피소드 열');
   const p2 = await DB.getProject(); p2.type='영화'; await DB.setProject(p2);
   await V.entityDetailView(main,'scenes',one.id,()=>{}); await wait(300);
-  ok(!main.querySelector('input[list="dl-episodes"]'), '영화 → 에피소드 입력란 숨김');
+  ok(!Array.from(main.querySelectorAll('.field'))
+      .some(f => f.querySelector('label') && f.querySelector('label').textContent === '에피소드'),
+     '영화 → 에피소드 칸 숨김');
   await V.entityListView(main,'scenes',()=>{}); await wait(200);
-  ok(!Array.from(main.querySelectorAll('.dtable thead th')).some(t=>t.textContent==='에피소드'), '영화 → 표에서도 에피소드 열 숨김');
+  ok(!Array.from(main.querySelectorAll('.dtable thead th')).some(t=>(t.querySelector('span')||t).textContent==='에피소드'), '영화 → 표에서도 에피소드 열 숨김');
   const p3 = await DB.getProject(); p3.type='드라마'; await DB.setProject(p3);
 }
 
@@ -285,7 +290,7 @@ console.log('== 로케이션 개편 ==');
   ok(tiles[0].getAttribute('style')==='--pcols:7' && tiles[1].getAttribute('style')==='--pcols:7',
      `열 수 = 사진 개수 (${tiles[0].getAttribute('style')}) → 항상 한 행에 딱 맞음`);
   await V.entityListView(main,'locations',()=>{}); await wait(250);
-  const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
+  const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>(t.querySelector('span')||t).textContent);
   ok(ths.includes('대장소') && ths.includes('소장소') && ths.includes('SET ID'), `표 헤더 ${ths.join(' / ')}`);
   ok(ths.includes('설명'), '목록에 설명 열 추가');
   ok(!ths.includes('3D 스캔') && !ths.includes('HDRI'), '목록에서 3D 스캔 / HDRI 제거');
@@ -413,9 +418,15 @@ console.log('== 카메라: 목록형 (상세 없음) ==');
   ev(rowsN[0]); await wait(120);
   ok(routed===null, `행 클릭해도 상세 이동 없음 (${routed})`);
 
-  // 목록에서 바로 편집 → 저장
-  const inp = rowsN[0].querySelector('.inline-cell .inp');
-  inp.value = 'Z9'; ev(inp,'input'); await wait(800);
+  // 목록에서 바로 편집 → 저장 (콤보는 드롭다운, 없는 값은 '직접 입력' 으로)
+  const sel = rowsN[0].querySelector('.inline-cell .combo select');
+  ok(!!sel, '인라인 콤보도 드롭다운');
+  const customOpt = Array.from(sel.options).find(o=>o.textContent.includes('직접 입력'));
+  ok(!!customOpt, "'직접 입력…' 선택지 제공");
+  sel.value = customOpt.value; ev(sel,'change'); await wait(120);
+  const inp = rowsN[0].querySelector('.inline-cell .combo input');
+  ok(!!inp, '직접 입력을 고르면 입력칸으로 바뀜');
+  inp.value = 'Z9'; ev(inp,'input'); ev(inp,'change'); await wait(800);
   const after = (await DB.list('cameras')).find(c=>c.id===cams[0].id) ||
                 (await DB.list('cameras')).find(c=>c.camRoll==='Z9');
   ok(!!(await DB.list('cameras')).some(c=>c.camRoll==='Z9'), `목록에서 편집 → 저장됨`);

@@ -18,7 +18,8 @@ import { exportCSV, exportBreakdown, exportPrint } from './export.js';
 const PAGE = 60;
 const STATE = {};
 function st(ent){
-  if (!STATE[ent]) STATE[ent] = { q:'', filters:{}, selected:null, limit:PAGE, sort:'new' };
+  if (!STATE[ent]) STATE[ent] = { q:'', filters:{}, selected:null, limit:PAGE,
+                                  sort:{ key:'updatedAt', dir:'desc' } };
   return STATE[ent];
 }
 
@@ -103,13 +104,23 @@ export async function entityListView(root, entKey, go){
       sel.addEventListener('change', () => { S.filters[f.k] = sel.value; draw(); buildFilters(); });
       filterBar.appendChild(sel);
     }
-    const sortSel = el('select', { class:'inp mini' }, [
-      el('option', { value:'name', text:'식별자순' }),
-      el('option', { value:'new',  text:'최신순' }),
-      el('option', { value:'old',  text:'오래된순' }),
+    // 시간 기준 정렬. 컬럼 정렬(표 머리 클릭)과 같은 상태를 쓴다.
+    const sortSel = el('select', { class:'inp mini', title:'정렬' }, [
+      el('option', { value:'updatedAt:desc', text:'최신 수정순' }),
+      el('option', { value:'createdAt:asc',  text:'등록 오래된순' }),
+      el('option', { value:'createdAt:desc', text:'등록 최신순' }),
     ]);
-    sortSel.value = S.sort;
-    sortSel.addEventListener('change', () => { S.sort = sortSel.value; draw(); });
+    const cur = S.sort.key + ':' + S.sort.dir;
+    if (!Array.from(sortSel.options).some(o => o.value === cur)){
+      // 컬럼으로 정렬 중이면 그 상태를 보여준다
+      sortSel.appendChild(el('option', { value:cur,
+        text:`${labelOf(entKey, S.sort.key)} ${S.sort.dir === 'asc' ? '↑' : '↓'}` }));
+    }
+    sortSel.value = cur;
+    sortSel.addEventListener('change', () => {
+      const [key, dir] = sortSel.value.split(':');
+      S.sort = { key, dir }; draw(); buildFilters();
+    });
     filterBar.appendChild(sortSel);
     if (Object.values(S.filters).some(Boolean) || S.q){
       filterBar.appendChild(el('button', { class:'btn tiny ghost', text:'초기화', onclick: () => {
@@ -135,11 +146,7 @@ export async function entityListView(root, entKey, go){
       ];
       return hay.some(val => typeof val === 'string' && val.toLowerCase().includes(q));
     });
-    const key = (r) => cfg.titleFields.map(k => r[k] || '').join('|');
-    if (S.sort === 'new')  out.sort((a,b) => (b.updatedAt||'').localeCompare(a.updatedAt||''));
-    if (S.sort === 'old')  out.sort((a,b) => (a.createdAt||'').localeCompare(b.createdAt||''));
-    if (S.sort === 'name') out.sort((a,b) => key(a).localeCompare(key(b), 'ko', { numeric:true }));
-    return out;
+    return sortRows(out);
   }
 
   /* ---- 표 ---- */
@@ -158,6 +165,30 @@ export async function entityListView(root, entKey, go){
   const cellText = (r, k) => k === '__cams' ? camSummaryLine(entKey, r)
                            : refMaps[k] ? (refMaps[k][r[k]] || '') : r[k];
 
+  /** 표에 보이는 문자열 기준으로 정렬한다 (로케이션은 id 가 아니라 이름으로 정렬돼야 한다).
+      씬 번호 '1-1' vs '1-10' 처럼 숫자가 섞인 값은 numeric 비교로 사람이 기대하는 순서가 된다. */
+  function sortRows(list){
+    const { key, dir } = S.sort;
+    const mul = dir === 'desc' ? -1 : 1;
+    const val = (r) => (key === 'updatedAt' || key === 'createdAt')
+      ? String(r[key] || '')
+      : String(cellText(r, key) ?? '');
+    return list.sort((a,b) => {
+      const x = val(a), y = val(b);
+      // 빈 값은 방향과 무관하게 항상 뒤로 보낸다
+      if (!x && y) return 1;
+      if (x && !y) return -1;
+      return mul * x.localeCompare(y, 'ko', { numeric:true, sensitivity:'base' });
+    });
+  }
+
+  function toggleSort(k){
+    S.sort = (S.sort.key === k)
+      ? { key:k, dir: S.sort.dir === 'asc' ? 'desc' : 'asc' }
+      : { key:k, dir:'asc' };
+    draw(); buildFilters();
+  }
+
   const tableWrap = el('div', { class:'table-wrap' });
   const countEl = el('div', { class:'dim tiny count' });
 
@@ -174,7 +205,14 @@ export async function entityListView(root, entKey, go){
       el('thead', {}, [ el('tr', {}, [
         el('th', { class:'c-no', text:'NO' }),
         el('th', { class:'c-thumb', text:'썸네일' }),
-        ...cols.map(k => el('th', { text: labelOf(entKey, k) })),
+        ...cols.map(k => el('th', {
+          class:'sortable' + (S.sort.key === k ? ' on' : ''),
+          title:'눌러서 정렬',
+          onclick: () => toggleSort(k),
+        }, [
+          el('span', { text: labelOf(entKey, k) }),
+          el('i', { class:'sort-ar', text: S.sort.key === k ? (S.sort.dir === 'asc' ? '▲' : '▼') : '↕' }),
+        ])),
         el('th', { class:'c-go' }),
       ])]),
       body

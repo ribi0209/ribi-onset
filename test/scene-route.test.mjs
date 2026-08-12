@@ -128,21 +128,23 @@ console.log('== 촬영 유닛은 캠별로 독립 ==');
   await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
   await wait(300);
 
-  const unitInput = () => Array.from(main.querySelectorAll('.field'))
+  // 촬영 유닛은 콤보 → 드롭다운으로 렌더된다
+  const unitSel = () => Array.from(main.querySelectorAll('.field'))
     .find(f => f.querySelector('label') && f.querySelector('label').textContent.startsWith('촬영 유닛'))
-    .querySelector('input');
+    .querySelector('.combo select');
   const tab = (i) => main.querySelectorAll('.cam-tab')[i];
 
   // 현재 열려 있는 탭(C: 값이 있어 기본 선택) 대신 A 부터 시작한다
   tab(0).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
-  const ua = unitInput();
-  ua.value = 'A'; ua.dispatchEvent(new w.Event('input',{bubbles:true}));
+  ok(!!unitSel(), '콤보가 드롭다운으로 렌더됨');
+  const ua = unitSel();
+  ua.value = 'A'; ua.dispatchEvent(new w.Event('change',{bubbles:true}));
   await wait(700);
 
   tab(1).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
-  ok(unitInput().value === '', `A 에서 유닛을 바꿔도 B 는 비어 있음 (${JSON.stringify(unitInput().value)})`);
-  const ub = unitInput();
-  ub.value = 'B'; ub.dispatchEvent(new w.Event('input',{bubbles:true}));
+  ok(unitSel().value === '', `A 에서 유닛을 바꿔도 B 는 비어 있음 (${JSON.stringify(unitSel().value)})`);
+  const ub = unitSel();
+  ub.value = 'B'; ub.dispatchEvent(new w.Event('change',{bubbles:true}));
   await wait(700);
 
   const rec = await DB.get('scenes', scene.id);
@@ -151,7 +153,7 @@ console.log('== 촬영 유닛은 캠별로 독립 ==');
   ok(!('unit' in rec), '레코드 최상단에 유닛이 남지 않음');
 
   tab(0).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
-  ok(unitInput().value === 'A', 'A 로 돌아오면 A 값 그대로');
+  ok(unitSel().value === 'A', 'A 로 돌아오면 A 값 그대로');
 }
 
 console.log('== 목록: 캠 기록 열 / 대표 이미지 A 우선 ==');
@@ -159,7 +161,7 @@ console.log('== 목록: 캠 기록 열 / 대표 이미지 A 우선 ==');
   const main = w.document.getElementById('main');
   await V.entityListView(main, 'scenes', ()=>{});
   await wait(300);
-  const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>t.textContent);
+  const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>(t.querySelector('span')||t).textContent);
   ok(!ths.includes('촬영 유닛'), `목록에 촬영 유닛 열 없음 (${ths.join('/')})`);
   ok(ths.includes('캠 기록'), '캠 기록 열 존재');
   // 썸네일·NO 다음이 에피소드·씬·캠기록 순이어야 한다 (촬영 유닛이 있던 자리)
@@ -187,16 +189,63 @@ console.log('== 자동 저장 유실 방지 ==');
   await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
   await wait(300);
 
-  const sceneField = Array.from(main.querySelectorAll('.field'))
+  const sceneField = () => Array.from(main.querySelectorAll('.field'))
     .find(f => f.querySelector('label') && f.querySelector('label').textContent === '씬');
-  const inp = sceneField.querySelector('input');
+  // 목록에 없는 씬 번호 → '직접 입력' 으로 전환해서 친다
+  const sel = sceneField().querySelector('.combo select');
+  const custom = Array.from(sel.options).find(o=>o.textContent.includes('직접 입력'));
+  sel.value = custom.value; sel.dispatchEvent(new w.Event('change',{bubbles:true}));
+  await wait(120);
+  const inp = sceneField().querySelector('.combo input');
+  ok(!!inp, "'직접 입력' 을 고르면 자유 입력칸");
   inp.value = '7-3';
-  inp.dispatchEvent(new w.Event('input',{bubbles:true}));   // change 없이 input 만
+  inp.dispatchEvent(new w.Event('input',{bubbles:true}));   // change(포커스 이탈) 없이 input 만
 
   // 저장 타이머(0.5초)가 돌기 전에 화면을 떠난다
   await V.flushAll();
   const rec = await DB.get('scenes', scene.id);
   ok(rec.scene === '7-3', `콤보 입력이 즉시 커밋됨 (${rec.scene})`);
+}
+
+console.log('== 목록 정렬 ==');
+{
+  const main = w.document.getElementById('main');
+  const p = await DB.getProject();
+
+  // 씬 번호를 섞어 넣는다 (1-10 이 1-2 보다 뒤로 가야 정상)
+  for (const v of ['2-1','1-10','1-2']){
+    const r = { id: DB.makeSceneId(p.name) + v, projectId: p.id, scene: v,
+                cams:{A:{},B:{},C:{},D:{}} };
+    await DB.put('scenes', r);
+  }
+  await V.entityListView(main, 'scenes', ()=>{});
+  await wait(300);
+
+  const ths = Array.from(main.querySelectorAll('.dtable thead th'));
+  const sceneTh = ths.find(t => (t.querySelector('span')||t).textContent === '씬');
+  ok(!!sceneTh && sceneTh.classList.contains('sortable'), '표 머리를 눌러 정렬할 수 있음');
+
+  // 열 위치를 하드코딩하지 않는다 (컬럼 구성이 바뀌면 조용히 엉뚱한 열을 보게 된다)
+  const sceneIdx = ths.indexOf(sceneTh);
+  const colVals = () => Array.from(main.querySelectorAll('tr.drow'))
+    .map(tr => tr.children[sceneIdx].textContent).filter(v => v && v !== '—');
+
+  sceneTh.dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  const asc = colVals();
+  ok(sceneTh.classList.contains('on') || main.querySelector('th.sortable.on'), '정렬 중인 열이 표시됨');
+  ok(asc.indexOf('1-2') < asc.indexOf('1-10'), `숫자 순서대로 정렬 (${asc.join(' < ')})`);
+  ok(asc.indexOf('1-10') < asc.indexOf('2-1'), '1-10 이 2-1 보다 앞');
+
+  const th2 = Array.from(main.querySelectorAll('.dtable thead th'))
+    .find(t => (t.querySelector('span')||t).textContent === '씬');
+  th2.dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  const desc = colVals();
+  ok(desc[0] === asc[asc.length-1], `한 번 더 누르면 역순 (${desc.join(' > ')})`);
+
+  // 빈 값은 방향과 무관하게 뒤로
+  const all = Array.from(main.querySelectorAll('tr.drow')).map(tr => tr.children[sceneIdx].textContent);
+  const firstEmpty = all.indexOf('—');
+  ok(firstEmpty === -1 || all.slice(firstEmpty).every(v => v === '—'), '빈 값은 항상 마지막');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
