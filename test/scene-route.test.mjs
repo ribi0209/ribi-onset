@@ -248,5 +248,46 @@ console.log('== 목록 정렬 ==');
   ok(firstEmpty === -1 || all.slice(firstEmpty).every(v => v === '—'), '빈 값은 항상 마지막');
 }
 
+console.log('== VFX 작업 타입 (캠별) ==');
+{
+  const main = w.document.getElementById('main');
+  const scene = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
+  await wait(300);
+
+  ok(!main.textContent.includes('HDRI'), '씬에서 HDRI 연결 제거됨');
+  const vfxField = () => Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent.startsWith('작업 타입'));
+  ok(!!vfxField(), 'HDRI 자리에 작업 타입');
+  ok(vfxField().classList.contains('camfield'), '작업 타입은 캠별 필드');
+
+  const tab = (i) => main.querySelectorAll('.cam-tab')[i];
+  tab(0).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  const sel = vfxField().querySelector('select');
+  sel.value = '3D'; sel.dispatchEvent(new w.Event('change',{bubbles:true}));
+  await wait(700);
+
+  tab(1).dispatchEvent(new w.Event('click',{bubbles:true})); await wait(250);
+  ok(vfxField().querySelector('select').value === '', 'B 캠은 별도 (A 의 3D 가 안 넘어옴)');
+  const selB = vfxField().querySelector('select');
+  selB.value = '2D'; selB.dispatchEvent(new w.Event('change',{bubbles:true}));
+  await wait(700);
+
+  const rec = await DB.get('scenes', scene.id);
+  ok(rec.cams.A.vfxType === '3D' && rec.cams.B.vfxType === '2D',
+     `A=3D / B=2D 로 각각 저장 (${rec.cams.A.vfxType}/${rec.cams.B.vfxType})`);
+  ok(!('linkedHdriIds' in rec), '씬의 HDRI 연결 데이터도 정리됨');
+
+  // Overview 물량 = 작업 타입이 지정된 캠 기록 수
+  const { usedCams } = await import('../js/schema.js');
+  const vfxCount = (await DB.list('scenes'))
+    .flatMap(s => usedCams('scenes', s).map(c => (s.cams[c]||{}).vfxType))
+    .filter(Boolean).length;
+  ok(vfxCount >= 2, `VFX 물량 ${vfxCount}건 (캠 단위로 셈)`);
+
+  const hdris = await DB.list('hdri');
+  ok(hdris.every(h => !('linkedScene' in h)), 'HDRI 쪽 연결 씬도 제거됨');
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

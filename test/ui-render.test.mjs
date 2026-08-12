@@ -39,13 +39,16 @@ const ev = (n,t='click')=>n.dispatchEvent(new w.Event(t,{bubbles:true}));
 
 console.log('== Overview ==');
 await V.overviewView(main, ()=>{}); await wait(150);
-ok(main.querySelectorAll('.stat').length===5, `스탯 5개 (${main.querySelectorAll('.stat').length})`);
+ok(main.querySelectorAll('.stat').length===6, `스탯 6개 (${main.querySelectorAll('.stat').length})`);
 ok(main.querySelectorAll('.card').length>=5, `집계 카드 ${main.querySelectorAll('.card').length}개`);
 ok(!main.textContent.includes('상태별'), 'Overview 에서 상태별 집계 제거');
 ok(!main.querySelector('.progress'), '완료 진행률 바 제거');
 ok(main.textContent.includes('캠 기록'), '캠 기록 카운터');
 ok(main.textContent.includes('카메라별 기록 수'), '카메라별 집계');
 ok(!main.textContent.includes('Cut (VFX 물량)'), '컷 카운터 제거됨');
+ok(main.textContent.includes('VFX 물량'), 'VFX 물량 카운터 복귀');
+ok(main.textContent.includes('작업 타입별 VFX 물량'), '작업 타입별 집계');
+ok(main.textContent.includes('벤더별 VFX 물량'), '벤더별 물량');
 
 console.log('== Project (멀티) ==');
 await V.projectView(main, ()=>{}); await wait(150);

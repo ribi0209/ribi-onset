@@ -13,7 +13,7 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 7;
+export const DB_VER  = 8;
 export const APP_ID  = 'Ribi Onset Management';
 export const APP_VER = 8;
 
@@ -177,15 +177,15 @@ async function postMigrate(){
   if (!(flag && flag.value)) await migrateAssetLinks();
 
   await linkScenesToLocations();
-  await moveHdriLinksToScenes();
+  await dropSceneHdriLinks();
   await migrateSceneCams();
   await migrateSceneUnitToCams();
 }
 
 /**
  * 촬영 유닛이 씬 공통에서 캠별 값으로 바뀌었다.
- * 예전에는 씬 하나에 유닛 하나였으므로, 그 값을 모든 캠에 복사한 뒤 최상단에서 지운다.
- * (지우지 않으면 화면에 안 보이는 값이 백업에만 남아 나중에 혼란을 준다)
+ * 예전 값은 **이미 기록이 있는 캠**(없으면 A) 한 곳에만 옮기고 최상단에서 지운다.
+ * 네 캠 모두에 복사하면 빈 캠까지 "기록 있는 캠"으로 잡혀 캠 기록·VFX 물량이 부풀어 오른다.
  */
 export async function migrateSceneUnitToCams(){
   const CAMS = (ENTITIES.scenes && ENTITIES.scenes.cams) || ['A','B','C','D'];
@@ -195,9 +195,15 @@ export async function migrateSceneUnitToCams(){
     if (!('unit' in s)) continue;
     const v = s.unit;
     if (!s.cams) s.cams = {};
-    for (const c of CAMS){
-      if (!s.cams[c]) s.cams[c] = {};
-      if (v && !s.cams[c].unit) s.cams[c].unit = v;
+    for (const c of CAMS) if (!s.cams[c]) s.cams[c] = {};
+    if (v){
+      const has = (c) => {
+        const d = s.cams[c] || {};
+        return !!(d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)
+               || (Array.isArray(d.photos) && d.photos.some(x => x && x.mid)));
+      };
+      const target = CAMS.find(has) || CAMS[0];
+      if (!s.cams[target].unit) s.cams[target].unit = v;
     }
     delete s.unit;
     await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
@@ -320,25 +326,24 @@ export async function linkScenesToLocations(){
   return n;
 }
 
-/** HDRI 쪽에 있던 씬 연결을 씬 쪽(linkedHdriIds)으로 옮긴다. 연결의 주인은 씬 하나뿐이어야 한다. */
-export async function moveHdriLinksToScenes(){
-  const hdris = await wrap(tx(['hdri']).objectStore('hdri').getAll());
+/**
+ * v7 → v8 : 씬 ↔ HDRI 연결을 없앤다.
+ * 씬의 그 자리에는 VFX 작업 타입이 들어갔고, HDRI 쪽 '연결 씬' 도 함께 뺐다.
+ * 양쪽에 값만 남아 있으면 화면에 안 보이는 채로 백업에만 실려 나가므로 지운다.
+ */
+export async function dropSceneHdriLinks(){
   let n = 0;
-  for (const h of hdris){
+  for (const s of await wrap(tx(['scenes']).objectStore('scenes').getAll())){
+    if (!('linkedHdriIds' in s)) continue;
+    delete s.linkedHdriIds;
+    await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
+    n++;
+  }
+  for (const h of await wrap(tx(['hdri']).objectStore('hdri').getAll())){
     if (!('linkedScene' in h)) continue;
-    const ids = Array.isArray(h.linkedScene) ? h.linkedScene : (h.linkedScene ? [h.linkedScene] : []);
-    for (const sid of ids){
-      const s = await wrap(tx(['scenes']).objectStore('scenes').get(sid));
-      if (!s) continue;
-      if (!Array.isArray(s.linkedHdriIds)) s.linkedHdriIds = [];
-      if (!s.linkedHdriIds.includes(h.id)){
-        s.linkedHdriIds.push(h.id);
-        await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
-        n++;
-      }
-    }
     delete h.linkedScene;
     await wrap(tx(['hdri'],'readwrite').objectStore('hdri').put(h));
+    n++;
   }
   return n;
 }
@@ -888,7 +893,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   // 씬의 로케이션 이름 → Location 레코드 연결, HDRI 쪽 씬 연결 → 씬으로 이관
   onProgress('연결 정리', 96);
   await linkScenesToLocations();
-  await moveHdriLinksToScenes();
+  await dropSceneHdriLinks();
   await migrateSceneCams();
   await migrateSceneUnitToCams();
 

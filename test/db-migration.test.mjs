@@ -45,7 +45,7 @@ console.log('== v2 DB 준비 완료 (씬 3건, VFX 정보 2건) ==');
 
 const DB = await import('../js/db.js');
 const db = await DB.open();
-ok(db.version===7, `DB 버전 ${db.version} → 7`);
+ok(db.version===8, `DB 버전 ${db.version} → 8`);
 ok(db.objectStoreNames.contains('projects'), 'projects 스토어 생성');
 ok(db.objectStoreNames.contains('cuts'), 'cuts 스토어 생성');
 
@@ -117,10 +117,11 @@ console.log('== v5 → v6 : 씬 로케이션을 Location 레코드에 연결 =='
   ok(c.locationId===loc1.id, `이름으로 Location 연결 (${c.locationId} === ${loc1.id})`);
   ok(!('legacyLocationName' in c), '연결되면 임시 이름은 제거');
 
+  // v8 에서 씬↔HDRI 연결 자체를 없앴다 (그 자리에 VFX 작업 타입이 들어감).
+  // 양쪽에 값이 남아 있으면 화면에 안 보이는 채로 백업에만 실려 나가므로 지운다.
   const h = (await DB.list('hdri'))[0];
-  ok(!('linkedScene' in h), 'HDRI 의 정방향 씬 연결 제거 (이제 역방향 표시)');
-  ok(Array.isArray(a.linkedHdriIds) && a.linkedHdriIds.includes('HDR-1'),
-     `씬에 연결 HDRI 심어짐 (${JSON.stringify(a.linkedHdriIds)})`);
+  ok(!('linkedScene' in h), 'HDRI 의 연결 씬 필드 제거');
+  ok(!('linkedHdriIds' in a), '씬의 연결 HDRI 필드도 제거');
 }
 
 console.log('== v6 → v7 : 씬 + 캠(A~D) 탭 구조로 이관 ==');
@@ -158,6 +159,17 @@ console.log('== v6 → v7 : 씬 + 캠(A~D) 탭 구조로 이관 ==');
   await DB.migrateSceneCams();
   const s2c = await DB.get('scenes', s2.id);
   ok(s2c.cams.B.camRoll === '손으로 고침', '이미 cams 가 있으면 다시 덮어쓰지 않음');
+}
+
+console.log('== 촬영 유닛 이관은 캠 하나에만 ==');
+{
+  // 네 캠 모두에 복사하면 빈 캠까지 '기록 있는 캠' 으로 잡혀 물량이 부풀어 오른다
+  const { usedCams } = await import('../js/schema.js');
+  for (const sc of await DB.list('scenes')){
+    ok(!('unit' in sc), `${sc.id}: 최상단 유닛 제거`);
+    ok(usedCams('scenes', sc).length <= 1,
+       `${sc.id}: 유닛 이관으로 캠이 부풀지 않음 (${usedCams('scenes', sc).join(',') || '없음'})`);
+  }
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

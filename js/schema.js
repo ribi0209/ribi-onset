@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v21 · 2026-08-12';
+export const BUILD = 'v22 · 2026-08-12';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -219,7 +219,7 @@ export const ENTITIES = {
     groups:[
       /* 4열 고정 — 썸네일이 왼쪽에서 3행을 관통한다
          1행: 에피소드 · 씬 · 촬영유닛(캠별)  2행: 캠 롤 · 클립 · 로케이션
-         3행: INT/EXT · 시제 · 벤더         4행: 촬영일 · 촬영시각 · 에셋 · HDRI */
+         3행: INT/EXT · 시제 · 벤더         4행: 촬영일 · 촬영시각 · 에셋 · 작업 타입 */
       { title:'기본정보', cols:4, fields:[
         { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
@@ -234,7 +234,9 @@ export const ENTITIES = {
         { k:'shootDate', label:'촬영일',  t:'date', span:1 },
         { k:'shootTime', label:'촬영시각', t:'time', span:1 },
         { k:'linkedAssetIds', label:'에셋', t:'link', to:'assets', span:1 },
-        { k:'linkedHdriIds',  label:'HDRI', t:'link', to:'hdri',   span:1 },
+        // VFX 물량의 통계 축. 캠(앵글)마다 다르므로 캠별 값이다 —
+        // A캠 와이드에는 set extension 이 필요해도 B캠 클로즈업엔 없을 수 있다.
+        { k:'vfxType', label:'작업 타입', t:'select', ref:'vfxTypes', span:1, cam:true },
       ]},
       { title:'내용', fields:[
         { k:'shotNote',  label:'씬 노트', t:'textarea', full:true },
@@ -433,15 +435,13 @@ export const ENTITIES = {
              'iso','shutter','wb','tStop','keyStop','keyDirection','keySource','meterMode',
              'lightColor','ambientStop','ratio','notes','createdAt','updatedAt'],
     groups:[
-      /* 4열 고정 — 1행: HDRI ID · 로케이션   2행: INT/EXT · 시간대   3행: 연결 씬 */
+      /* 4열 고정 — 1행: HDRI ID · 로케이션   2행: INT/EXT · 시간대 */
       { title:'기본정보', cols:4, fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:3 },
+        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:2 },
         { k:'hdriId', label:'HDRI ID', t:'text', span:1 },
         { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:2 },
         { k:'intExt', label:'INT / EXT', t:'select', ref:'intExt', span:1 },
         { k:'tod',    label:'시간대',    t:'select', ref:'tod', span:1 },
-        // 연결의 주인은 씬이다. 씬에서 HDRI 를 고르면 여기에 자동으로 나타난다.
-        { k:'linkedScene', label:'연결 씬', t:'backlink', from:'scenes', via:'linkedHdriIds', span:3 },
       ]},
       { title:'HDRI 촬영 스펙', fields:[
         { k:'camera', label:'카메라', t:'combo', ref:'hdriCameras' },
@@ -545,14 +545,24 @@ export function camSummaryLine(entKey, r){
     .filter(Boolean).join(' · ');
 }
 
-/** 값이 들어 있는 캠 개수 */
+/**
+ * 값이 들어 있는 캠 목록.
+ * 어떤 필드를 봐야 하는지 하드코딩하지 않고 스키마의 cam:true 필드를 전부 훑는다.
+ * (예전에 캠 롤·클립·사진만 보다가, 작업 타입만 지정한 캠이 물량 집계에서 빠졌다)
+ */
 export function usedCams(entKey, r){
   const cfg = ENTITIES[entKey];
   if (!Array.isArray(cfg.cams) || !r || !r.cams) return [];
+  const keys = allFields(entKey).filter(f => f.cam);
+  const filled = (v) => {
+    if (!v) return false;
+    if (Array.isArray(v)) return v.some(x => x && x.mid);
+    if (typeof v === 'object') return !!v.mid;
+    return String(v).trim() !== '';
+  };
   return cfg.cams.filter(c => {
     const d = r.cams[c] || {};
-    return !!(d.camRoll || d.clip || (d.thumbnail && d.thumbnail.mid)
-           || (Array.isArray(d.photos) && d.photos.some(x => x && x.mid)));
+    return keys.some(f => filled(d[f.k]));
   });
 }
 

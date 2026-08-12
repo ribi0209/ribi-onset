@@ -646,12 +646,17 @@ export async function overviewView(root, go){
   // 씬의 로케이션은 Location 레코드 id — 이름으로 바꿔야 집계가 사람이 읽을 수 있다
   const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
 
+  // VFX 물량 = 작업 타입이 지정된 캠 기록. 캠(앵글)마다 별개의 샷이므로 이게 세는 단위다.
+  const vfxRecords = camRecords.filter(x => x.data.vfxType);
+
   const byEp     = by(scenes, s => s.episode);
-  const byVendor = by(scenes, s => s.vendor || '미배정');
   const byLoc    = by(scenes, s => locName[s.locationId] || s.legacyLocationName);
   const byTod    = by(scenes, s => s.tod);
   const byIntExt = by(scenes, s => s.intExt);
   const byCam    = by(camRecords, x => x.cam + '캠');
+  const byType   = by(vfxRecords, x => x.data.vfxType);
+  // 벤더는 씬 단위 값이지만 물량은 캠 단위로 센다 (벤더에 넘길 샷 수)
+  const byVendor = by(vfxRecords, x => x.scene.vendor || '미배정');
 
   const isDrama = p.type === '드라마';
 
@@ -679,22 +684,24 @@ export async function overviewView(root, go){
         el('div', { class:'dim tiny', text:`크랭크인 ${p.crankIn||'—'} · 크랭크업 ${p.crankUp||'—'} · 납품 ${p.deliveryDate||'—'}` }),
         el('div', { class:'dim tiny', text:`딜리버리 ${[p.deliveryResolution,p.deliveryFps&&p.deliveryFps+'fps',p.deliveryCodec,p.deliveryColorSpace].filter(Boolean).join(' / ')||'—'}` }),
         el('div', { class:'dim tiny', text:
-           `씬 ${scenes.length} · 캠 기록 ${camRecords.length}` })
+           `씬 ${scenes.length} · 캠 기록 ${camRecords.length} · VFX 물량 ${vfxRecords.length}` })
       ])
     ]),
 
     el('div', { class:'stats big' }, [
       el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(scenes.length)}), el('span',{text:'Scene'}) ]),
       el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(camRecords.length)}), el('span',{text:'캠 기록'}) ]),
+      el('div', { class:'stat click', onclick:()=>go('scenes') }, [ el('b',{text:String(vfxRecords.length)}), el('span',{text:'VFX 물량'}) ]),
       el('div', { class:'stat click', onclick:()=>go('locations') }, [ el('b',{text:String((await DB.list('locations')).length)}), el('span',{text:'Location'}) ]),
       el('div', { class:'stat click', onclick:()=>go('assets') }, [ el('b',{text:String((await DB.list('assets')).length)}), el('span',{text:'Asset'}) ]),
       el('div', { class:'stat click', onclick:()=>go('hdri') }, [ el('b',{text:String((await DB.list('hdri')).length)}), el('span',{text:'HDRI'}) ]),
     ]),
 
     el('div', { class:'dash-grid' }, [
-      isDrama ? el('div', { class:'card wide' }, [ el('h4',{text:'에피소드별 씬 수'}), bars(byEp,'e') ]) : null,
+      el('div', { class:'card wide' }, [ el('h4',{text:'작업 타입별 VFX 물량'}), bars(byType,'v') ]),
+      isDrama ? el('div', { class:'card' }, [ el('h4',{text:'에피소드별 씬 수'}), bars(byEp,'e') ]) : null,
       el('div', { class:'card' }, [ el('h4',{text:'카메라별 기록 수'}), bars(byCam,'s') ]),
-      el('div', { class:'card' }, [ el('h4',{text:'벤더별 씬 수'}), bars(byVendor,'s') ]),
+      el('div', { class:'card' }, [ el('h4',{text:'벤더별 VFX 물량'}), bars(byVendor,'s') ]),
       el('div', { class:'card' }, [ el('h4',{text:'로케이션별 씬 수'}), bars(byLoc,'e', 10) ]),
       el('div', { class:'card' }, [ el('h4',{text:'시제별 씬 수'}), bars(byTod,'e') ]),
       el('div', { class:'card' }, [ el('h4',{text:'INT / EXT'}), bars(byIntExt,'v') ]),
