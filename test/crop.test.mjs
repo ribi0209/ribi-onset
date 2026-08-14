@@ -3,6 +3,13 @@
  * 사진은 화면 크기에 맞춰 줄여서 보여 주고 그 위에서 영역을 끈다.
  * 이 변환을 빠뜨리면 원본에서 엉뚱한 데가 잘린다. 눈으로는 "왜 이상하지" 정도로만 보인다.
  */
+import fs from 'node:fs';
+import { JSDOM } from 'jsdom';
+const dom = new JSDOM('<div id="main"></div>', { url:'https://example.test/' });
+globalThis.window = dom.window; globalThis.document = dom.window.document;
+globalThis.localStorage = dom.window.localStorage;
+const FDB = await import('fake-indexeddb');
+globalThis.indexedDB = new FDB.IDBFactory(); globalThis.IDBKeyRange = FDB.IDBKeyRange;
 import { mapCropRect } from '../js/media.js';
 let fail=0; const ok=(c,m)=>{ console.log((c?'  PASS ':'  FAIL ')+m); if(!c) fail++; };
 const eq = (a,b) => JSON.stringify(a) === JSON.stringify(b);
@@ -38,6 +45,25 @@ console.log('== 확대해서 보는 경우도 맞는가 ==');
   const r = mapCropRect({x:400,y:300,w:200,h:150}, 800, 600, 400, 300);
   ok(eq(r, {x:200,y:150,w:100,h:75}),
      `키워서 볼 때도 원본 좌표로 정확히 환산 (${JSON.stringify(r)})`);
+}
+
+console.log('== 오류 문구가 undefined 로 새지 않는가 ==');
+{
+  // 실제로 났던 문제: 이미지 로드 실패를 이벤트 객체로 거부해서
+  // "자르기 실패: undefined" 만 뜨고 원인을 알 수 없었다.
+  const { errText } = await import('../js/ui.js');
+  ok(errText(new Error('사진을 읽지 못했습니다')) === '사진을 읽지 못했습니다', 'Error 는 메시지 그대로');
+  ok(errText({ type:'error' }) === 'error', '이벤트 객체는 type 으로');
+  ok(errText('문자열 오류') === '문자열 오류', '문자열도 그대로');
+  ok(errText(undefined) === '알 수 없는 오류', 'undefined 여도 문구가 나온다');
+  ok(errText(null) === '알 수 없는 오류', 'null 여도 문구가 나온다');
+  ok(!String(errText({})).includes('undefined'), '빈 객체여도 undefined 가 안 보인다');
+
+  const src = ['../js/ui.js','../js/views.js','../js/export.js']
+    .map(f => fs.readFileSync(f,'utf8')).join('\n')
+    .replace(/return e\.message \|\| e\.name[^;]*;/, '');   // errText 본체는 제외
+  ok(!/\+ ?e(rr)?\.message/.test(src),
+     '화면에 띄우는 오류는 전부 errText 를 거친다 (원시 .message 직접 사용 없음)');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

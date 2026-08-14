@@ -4,8 +4,7 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ingest, ingestMany, pickFiles, fmtBytes } from './media.js';
-// cropBlob 은 크롭을 실제로 쓸 때만 불러온다 (첫 로딩을 가볍게)
+import { ingest, ingestMany, pickFiles, fmtBytes, cropFromImage } from './media.js';
 
 /* ---------------- DOM 헬퍼 ---------------- */
 
@@ -31,6 +30,13 @@ export const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 export function clear(n){ while (n.firstChild) n.removeChild(n.firstChild); return n; }
 export function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/** 예외를 사람이 읽을 문구로. Error 가 아닌 것(이벤트 객체 등)이 던져져도 undefined 가 뜨지 않게 한다. */
+export function errText(e){
+  if (!e) return '알 수 없는 오류';
+  if (typeof e === 'string') return e;
+  return e.message || e.name || e.type || String(e);
 }
 
 /* ---------------- 토스트 ---------------- */
@@ -139,7 +145,7 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
             await DB.delMedia(v.mid);            // 자른 결과로 대체한다
             setVal(ref); onDirty && onDirty();
             await render();
-          } catch (err){ toast('저장 실패: ' + err.message, 'err'); }
+          } catch (err){ toast('저장 실패: ' + errText(err), 'err'); }
           finally { p.done(); }
         }
       }));
@@ -174,7 +180,7 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
       const ref = await ingest(src, preset);
       setVal(ref); onDirty && onDirty();
       await render();
-    } catch (e){ toast('이미지 처리 실패: ' + e.message, 'err'); }
+    } catch (e){ toast('이미지 처리 실패: ' + errText(e), 'err'); }
     finally { p.done(); }
   }
   render();
@@ -273,10 +279,14 @@ export function cropDialog(source, opts = {}){
       const v = view();
       const p = progress(); p.set('잘라내는 중', 40);
       try {
-        const { cropBlob } = await import('./media.js');
-        const out = await cropBlob(source, { ...rect, dispW:v.w, dispH:v.h });
+        // 블롭을 다시 디코드하지 않고, 지금 보고 있는 이미지에서 바로 떼어낸다
+        const out = await cropFromImage(img, rect, v.w, v.h);
         close(out);
-      } catch (e){ toast('자르기 실패: ' + e.message, 'err'); close(null); }
+      } catch (e){
+        console.error('crop failed', e);
+        toast('자르기 실패: ' + errText(e), 'err', 5000);
+        close(null);
+      }
       finally { p.done(); }
     }
 

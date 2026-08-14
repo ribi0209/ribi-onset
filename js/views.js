@@ -10,7 +10,7 @@ import {
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
-  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog
+  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog, errText
 } from './ui.js';
 import { ingest, pickFiles } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
@@ -529,7 +529,7 @@ async function readMonitorInto(camRec, ref){
     if (all.clip)    snapped.clip    = all.clip;
   } catch (e){
     p.done();
-    toast('판독 실패: ' + e.message, 'err', 4500);
+    toast('판독 실패: ' + errText(e), 'err', 4500);
     return false;
   }
   p.done();
@@ -732,7 +732,7 @@ export async function settingsView(root){
           const OCR = await import('./ocr.js');
           await OCR.loadEngine((m, pc) => p.set(m, pc));
           toast('OCR 엔진 준비 완료 — 이제 오프라인에서도 판독됩니다', 'ok', 4000);
-        } catch (err){ toast('내려받기 실패: ' + err.message, 'err', 5000); }
+        } catch (err){ toast('내려받기 실패: ' + errText(err), 'err', 5000); }
         finally { p.done(); }
       }}),
     ]),
@@ -802,7 +802,7 @@ export async function backupView(root, reload){
       setRefsCache(await DB.getRefs());
       toast(`가져오기 완료 · 프로젝트 ${s.projects} / 씬 ${s.scenes} / 컷 ${s.cuts} / 로케 ${s.locations} / 에셋 ${s.assets} / 이미지 ${s.media}`, 'ok', 6000);
       reload && reload();
-    } catch (e){ toast('가져오기 실패: ' + e.message, 'err', 6000); }
+    } catch (e){ toast('가져오기 실패: ' + errText(e), 'err', 6000); }
     finally { p.done(); }
   });
 
@@ -818,7 +818,7 @@ export async function backupView(root, reload){
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
       toast(`${name} (${fmtBytes(blob.size)})`);
-    } catch(e){ toast('내보내기 실패: '+e.message, 'err'); }
+    } catch(e){ toast('내보내기 실패: '+errText(e), 'err'); }
     finally { p.done(); }
   }
 

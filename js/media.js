@@ -16,11 +16,15 @@ async function loadBitmap(file){
   try {
     return await createImageBitmap(file, { imageOrientation: 'from-image' });
   } catch (e) {
-    // 구형 폴백
+    // 구형 폴백. 여기서 실패할 때 이벤트 객체로 거부하면 e.message 가 undefined 라
+    // 화면에 "실패: undefined" 만 뜨고 원인을 알 수 없다 → 반드시 Error 로 던진다.
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((res, rej) => {
-        const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url;
+        const i = new Image();
+        i.onload  = () => res(i);
+        i.onerror = () => rej(new Error(`이미지를 읽지 못했습니다 (형식: ${file.type || '알 수 없음'})`));
+        i.src = url;
       });
       return img;
     } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -66,19 +70,30 @@ export function mapCropRect(rect, dispW, dispH, natW, natH){
   return { x, y, w, h };
 }
 
-/** 원본 Blob 에서 지정 영역만 잘라낸 Blob 을 만든다 (원본은 건드리지 않는다) */
-export async function cropBlob(source, rect, quality = 0.9){
-  const bmp = await loadBitmap(source);
-  const r = mapCropRect(rect, rect.dispW || bmp.width, rect.dispH || bmp.height, bmp.width, bmp.height);
+/**
+ * 자르기 화면에 **이미 떠 있는 <img>** 에서 지정 영역만 떼어낸다.
+ *
+ * 블롭을 다시 디코드하지 않는 게 핵심이다.
+ *  - 화면에 보였다는 건 브라우저가 이미 디코드했다는 뜻이다. 한 번 더 할 이유가 없다
+ *  - createImageBitmap 이 실패하면 폴백까지 줄줄이 실패해 원인 없는 오류가 났었다
+ *  - 12MP 사진을 두 번 디코드하지 않으니 태블릿에서 더 빠르고 메모리도 덜 쓴다
+ * EXIF 회전은 <img> 가 이미 반영한 상태라 naturalWidth/Height 와 drawImage 가 서로 맞는다.
+ */
+export async function cropFromImage(imgEl, rect, dispW, dispH, quality = 0.92){
+  const natW = imgEl && (imgEl.naturalWidth || imgEl.width);
+  const natH = imgEl && (imgEl.naturalHeight || imgEl.height);
+  if (!natW || !natH) throw new Error('이미지가 아직 다 열리지 않았습니다. 잠시 뒤 다시 시도하세요.');
+
+  const r = mapCropRect(rect, dispW || natW, dispH || natH, natW, natH);
   const canvas = document.createElement('canvas');
   canvas.width = r.w; canvas.height = r.h;
   const ctx = canvas.getContext('2d', { alpha:false });
+  if (!ctx) throw new Error('캔버스를 만들지 못했습니다');
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bmp, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
-  if (bmp.close) bmp.close();
+  ctx.drawImage(imgEl, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+
   const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
-  // ingest 가 파일명을 참조하므로 붙여 둔다
-  try { blob.name = 'crop.jpg'; } catch {}
+  if (!blob) throw new Error(`잘라낸 이미지를 만들지 못했습니다 (${r.w}×${r.h})`);
   return blob;
 }
 
