@@ -126,13 +126,13 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
       }));
       if (opts.onShot){
         box.appendChild(el('button', {
-          class:'photo-ocr', title:'모니터 정보 읽기', text:'⌁',
+          class:'photo-ocr', title:'모니터에서 캠 롤·클립 읽기', text:'⌁ OCR',
           onclick: (e) => { e.stopPropagation(); opts.onShot(v); }
         }));
       }
       // 이미 넣은 사진도 다시 잘라낼 수 있다 (모니터 두 대를 한 장에 찍은 경우 등)
       box.appendChild(el('button', {
-        class:'photo-crop', title:'잘라내기', text:'✂',
+        class:'photo-crop', title:'다시 자르기', text:'✂ 자르기',
         onclick: async (e) => {
           e.stopPropagation();
           const m = await DB.getMedia(v.mid);

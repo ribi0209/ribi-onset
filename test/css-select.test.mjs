@@ -100,5 +100,32 @@ console.log('== 노트 칸은 한 줄로 끊는다 ==');
   ok(!body.includes('line-clamp'), '두 줄 클램프는 제거됨');
 }
 
+console.log('== 자르기 화면이 아래 버튼을 덮지 않는가 ==');
+{
+  // 실제로 났던 문제: 선택 영역 바깥을 덮는 9999px 그림자가 화면 밖까지 번져
+  // "이 영역 사용" 버튼까지 검게 덮였다 → 비활성처럼 보였다.
+  const stage = (css.match(/\.crop-stage\{([^}]*)\}/) || [,''])[1].replace(/\s+/g,'');
+  ok(/overflow:hidden/.test(stage), '무대 밖으로 그림자가 새지 않게 잘라 낸다');
+  const box = (css.match(/\.crop-box\{([^}]*)\}/) || [,''])[1].replace(/\s+/g,'');
+  ok(/box-shadow:0 ?0 ?0 ?9999px/.test(box.replace(/;/g,';')) || box.includes('box-shadow'),
+     '선택 영역 바깥은 여전히 어둡게 표시');
+
+  // 모서리 핸들이 무대 밖으로 튀어나가면 위 overflow:hidden 에 잘린다
+  const h = (css.match(/\.crop-h\{([^}]*)\}/) || [,''])[1].replace(/\s+/g,'');
+  ok(!/margin:-/.test(h), '핸들은 음수 여백으로 밖으로 빼지 않는다 (잘림 방지)');
+  for (const c of ['nw','ne','sw','se'])
+    ok(new RegExp('\\.crop-h\\.'+c+'\\{').test(css.replace(/\s+/g,'')), `${c} 핸들 위치 지정`);
+  ok(!/\.crop-h\.(ne|sw|se)\{[^}]*left:100%/.test(css), '핸들이 상자 밖(100%)에 놓이지 않는다');
+}
+
+console.log('== 사진 버튼이 무슨 기능인지 알아볼 수 있는가 ==');
+{
+  const ui = fs.readFileSync('../js/ui.js','utf8');
+  ok(/class:'photo-ocr'[^}]*text:'[^']*OCR'/.test(ui), 'OCR 버튼에 글자 표시 (⌁ 만으로는 모른다)');
+  ok(/class:'photo-crop'[^}]*text:'[^']*자르기'/.test(ui), '자르기 버튼에 글자 표시');
+  // 옛 규칙(우상단 28px 정사각)이 남아 있으면 새 규칙과 자리·크기가 충돌한다
+  ok(!/\.photo-ocr\{[^}]*right:36px/.test(css.replace(/\s+/g,'')), '옛 .photo-ocr 규칙 제거됨');
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);
