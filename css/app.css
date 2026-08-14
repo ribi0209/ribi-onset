@@ -364,6 +364,11 @@ body.printing #printroot{
 .field.camfield > label::after{ content:' ◐'; color:var(--ok); font-size:9px; }
 .link-add{ max-width:100%; }
 td.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; letter-spacing:-.2px; }
+/* 노트 칸 — 두 줄까지만 보이고 나머지는 … 로 자른다 (행 높이가 들쭉날쭉해지지 않게) */
+.dtable td.note{
+  max-width:340px; white-space:normal; line-height:1.35;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
 
 /* ---------- 컷 카드 ---------- */
 .cuts-sec{ margin-top:4px; }

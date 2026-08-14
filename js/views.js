@@ -231,9 +231,12 @@ export async function entityListView(root, entKey, go){
 
       const tds = cols.map((k, idx) => {
         const txt = cellText(r, k);
+        const f = fieldMap(entKey)[k];
+        // 노트류는 길고 줄바꿈도 들어간다 → 두 줄로 자르고 전체는 툴팁으로
         const cls = k === '__cams' ? (txt ? 'mono tiny' : 'dim')
+                  : (f && f.t === 'textarea') ? (txt ? 'note' : 'dim')
                   : idx === 0 ? 'strong' : (txt ? '' : 'dim');
-        return el('td', { class: cls, text: txt || '—' });
+        return el('td', { class: cls, text: txt || '—', title: (f && f.t === 'textarea' && txt) ? txt : null });
       });
 
       body.appendChild(el('tr', {

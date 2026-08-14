@@ -167,6 +167,11 @@ console.log('== 목록: 캠 기록 열 / 대표 이미지 A 우선 ==');
   // 썸네일·NO 다음이 에피소드·씬·캠기록 순이어야 한다 (촬영 유닛이 있던 자리)
   ok(ths[2]==='에피소드' && ths[3]==='씬' && ths[4]==='캠 기록',
      `캠 기록이 촬영 유닛 자리에 (${ths.slice(2,6).join(' / ')})`);
+  ok(!ths.includes('INT / EXT') && !ths.includes('시제'), `INT/EXT · 시제 열 제거 (${ths.join('/')})`);
+  // NO · 썸네일 · 에피소드 · 씬 · 캠 기록 · 로케이션 · 씬 노트 · 벤더
+  ok(ths[5]==='로케이션', `로케이션 (${ths[5]})`);
+  ok(ths[6]==='씬 노트', `INT/EXT·시제 자리에 씬 노트 (${ths[6]})`);
+  ok(ths[7]==='벤더', `벤더는 그대로 마지막 (${ths[7]})`);
 
   const { thumbOf } = await import('../js/schema.js');
   const mk = (cams) => ({ cams });
@@ -324,6 +329,33 @@ console.log('== 찍지 않은 캠은 세지 않는다 ==');
   await DB.repairCamUnitFanout(true);
   const got2 = await DB.get('scenes', mine.id);
   ok(got2.cams.A.unit === 'A' && got2.cams.B.unit === 'B', '값이 서로 다르면 사람 입력 → 보존');
+}
+
+console.log('== 목록의 로케이션 표기 / 노트 셀 ==');
+{
+  const { displayName } = await import('../js/schema.js');
+  const loc = { mainLocation:'조양체육관', subLocation:'2층 복도', setId:'SET-012' };
+  ok(displayName('locations', loc) === '조양체육관 — 2층 복도',
+     `대장소 — 소장소 만 (${displayName('locations', loc)})`);
+  ok(!displayName('locations', loc).includes('SET-012'), 'SET ID 는 빠진다');
+  ok(displayName('locations', { mainLocation:'팔복사무실' }) === '팔복사무실', '소장소가 없으면 대장소만');
+
+  // Location 페이지 자체 목록에는 SET ID 가 그대로 있어야 한다
+  const { ENTITIES } = await import('../js/schema.js');
+  ok(ENTITIES.locations.listCols.includes('setId'), 'Location 페이지에는 SET ID 유지');
+
+  const main = w.document.getElementById('main');
+  const scene = (await DB.list('scenes'))[0];
+  scene.shotNote = '와이어 3개\n뒤쪽 간판 지워야 함';
+  await DB.put('scenes', scene);
+  await V.entityListView(main, 'scenes', ()=>{});
+  await wait(300);
+  const noteTd = main.querySelector('tr.drow td.note');
+  ok(!!noteTd, '노트 칸에 클램프 클래스가 붙는다');
+  ok(noteTd.getAttribute('title') === scene.shotNote, '잘린 내용은 툴팁으로 전체 확인 가능');
+  const css = fs.readFileSync('../css/app.css','utf8');
+  ok(/td\.note\{[^}]*-webkit-line-clamp:2/.test(css.replace(/\s+/g,'')) ||
+     /td\.note\{[\s\S]*?-webkit-line-clamp:\s*2/.test(css), '두 줄로 자른다');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

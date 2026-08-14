@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v24 · 2026-08-12';
+export const BUILD = 'v25 · 2026-08-12';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -213,7 +213,7 @@ export const ENTITIES = {
       { k:'tod',     ref:'tod',      label:'시제' },
       { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
-    listCols:['episode','scene','__cams','locationId','intExt','tod','vendor'],
+    listCols:['episode','scene','__cams','locationId','shotNote','vendor'],
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
              'locationId','vendor','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
@@ -296,7 +296,9 @@ export const ENTITIES = {
   locations: {
     label:'Location', labelKo:'로케이션', title:'로케이션 정보', desc:'대장소·소장소와 세트 타입, 스캔·HDRI 진행상태, 현장 레퍼런스를 관리합니다.',
     icon:'◈', store:'locations', idPrefix:'LOC',
-    titleFields:['mainLocation'], subtitleFields:['subLocation','setId'],
+    // 다른 화면(씬 목록·HDRI·연결 드롭다운)에 한 줄로 나올 때의 표기.
+    // SET ID 까지 붙으면 목록에서 너무 길어진다 — Location 페이지 자체 목록에는 그대로 나온다.
+    titleFields:['mainLocation'], subtitleFields:['subLocation'],
     thumbField:'thumbnail',
     filters:[
       { k:'setType', ref:'setTypes', label:'세트 타입' },
