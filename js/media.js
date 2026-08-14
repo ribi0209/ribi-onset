@@ -121,6 +121,47 @@ export function pickFiles({ multiple = false, capture = false } = {}){
   });
 }
 
+/* ---------------- 기기에 원본 남기기 ---------------- */
+
+/**
+ * 웹 앱은 기기 갤러리(DCIM)에 직접 쓸 수 없다.
+ * capture 로 연 카메라는 사진을 임시 파일로 넘기고 끝나서 갤러리에 남지 않는다.
+ * 그래서 촬영 원본을 다운로드로 한 벌 더 내려받아 둔다 —
+ * 갤럭시탭 기준 Download 폴더에 들어가고 갤러리의 'Download' 앨범에 뜬다.
+ */
+const SAVE_KEY = 'ribi-save-device';
+export function deviceSaveEnabled(){ return localStorage.getItem(SAVE_KEY) !== '0'; }
+export function setDeviceSave(on){ localStorage.setItem(SAVE_KEY, on ? '1' : '0'); }
+
+/** 파일명 — 나중에 찾을 수 있게 프로젝트·씬·캠을 붙인다 */
+export function deviceFileName(parts = [], when = new Date()){
+  const p = (n) => String(n).padStart(2,'0');
+  const stamp = `${when.getFullYear()}${p(when.getMonth()+1)}${p(when.getDate())}`
+              + `-${p(when.getHours())}${p(when.getMinutes())}${p(when.getSeconds())}`;
+  const clean = parts
+    .map(x => String(x || '').trim())
+    .filter(Boolean)
+    .map(x => x.replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, '_'))
+    .slice(0, 4);
+  return ['Ribi', ...clean, stamp].join('_') + '.jpg';
+}
+
+/** 원본 파일을 기기에 저장. 실패해도 앱 기록에는 영향이 없다. */
+export function saveToDevice(file, name){
+  if (!file) return false;
+  try {
+    const url = URL.createObjectURL(file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || deviceFileName();
+    a.style.position = 'fixed'; a.style.left = '-9999px';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+    return true;
+  } catch { return false; }
+}
+
 export function fmtBytes(n){
   if (!n) return '0 B';
   const u = ['B','KB','MB','GB'];

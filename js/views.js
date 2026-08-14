@@ -12,7 +12,7 @@ import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
   refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog
 } from './ui.js';
-import { ingest, pickFiles } from './media.js';
+import { ingest, pickFiles, deviceSaveEnabled, setDeviceSave, saveToDevice, deviceFileName } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
 
 const PAGE = 60;
@@ -517,6 +517,9 @@ function camSummary(d){
 async function shootMonitorToCam(rec, cfg, active, save){
   const files = await pickFiles({ capture:true });
   if (!files.length) return null;
+  // 자르기 전 '원본'을 기기에 남긴다 — 모니터 두 대가 다 들어간 사진이 그대로 보관된다
+  if (deviceSaveEnabled())
+    saveToDevice(files[0], deviceFileName([rec.episode, rec.scene, '모니터']));
   // 한 장에 모니터가 두 대 찍혔으면, 같은 원본을 두 번 잘라 A·B 에 각각 넣는다
   return applyMonitorShot(rec, cfg, active, save, files[0], 0);
 }
@@ -773,6 +776,25 @@ export async function settingsView(root){
         settingsView(root);
       }}),
     ]),
+
+    el('h3', { class:'sect', text:'촬영 원본 보관' }),
+    el('p', { class:'dim tiny', text:
+      '웹 앱은 기기 갤러리(DCIM)에 직접 쓸 수 없습니다. 앱 안에서 카메라를 열면 사진이 앱으로만 전달되고 갤러리에는 남지 않아요. ' +
+      '이 설정을 켜면 찍은 원본을 Download 폴더에도 한 벌 내려받습니다 — 갤러리의 「Download」 앨범에서 보입니다. ' +
+      '자르기 전 원본이라 모니터 두 대가 다 들어간 사진 그대로 보관됩니다.' }),
+    (() => {
+      const chk = el('input', { type:'checkbox', id:'devSave' });
+      chk.checked = deviceSaveEnabled();
+      chk.addEventListener('change', () => {
+        setDeviceSave(chk.checked);
+        toast(chk.checked ? '촬영 원본을 기기에도 저장합니다' : '앱에만 저장합니다', 'ok', 2000);
+      });
+      return el('label', { class:'row gap', style:'cursor:pointer' }, [
+        chk, el('span', { text:'촬영 원본을 기기에 저장' }),
+      ]);
+    })(),
+    el('p', { class:'dim tiny', text:
+      '처음 한 번은 Chrome 이 「파일 여러 개 다운로드 허용」 을 물어봅니다. 허용해야 계속 저장됩니다.' }),
 
     el('h3', { class:'sect', text:'모니터 OCR' }),
     el('p', { class:'dim tiny', text:

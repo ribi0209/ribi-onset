@@ -4,7 +4,8 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ingest, ingestMany, pickFiles, fmtBytes } from './media.js';
+import { ingest, ingestMany, pickFiles, fmtBytes,
+         deviceSaveEnabled, saveToDevice, deviceFileName } from './media.js';
 // cropBlob 은 크롭을 실제로 쓸 때만 불러온다 (첫 로딩을 가볍게)
 
 /* ---------------- DOM 헬퍼 ---------------- */
@@ -157,6 +158,8 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
   async function grab(capture){
     const files = await pickFiles({ capture });
     if (!files.length) return;
+    // 카메라로 찍은 것만 기기에 남긴다 (갤러리에서 고른 건 이미 기기에 있다)
+    if (capture && deviceSaveEnabled()) saveToDevice(files[0], deviceFileName(opts.saveAs || []));
     const p = progress(); p.set('이미지 압축 중', 40);
     try {
       const ref = await ingest(files[0], preset);
