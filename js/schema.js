@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v27 · 2026-08-12';
+export const BUILD = 'v28 · 2026-08-12';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -221,7 +221,8 @@ export const ENTITIES = {
          1행: 에피소드 · 씬 · 촬영유닛(캠별)  2행: 캠 롤 · 클립 · 로케이션
          3행: INT/EXT · 시제 · 벤더         4행: 촬영일 · 촬영시각 · 에셋 · 작업 타입 */
       { title:'기본정보', cols:4, fields:[
-        { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true },
+        // ocr:true → 사진 위의 ⌁ 버튼으로 모니터 오버레이를 읽어 캠 롤·클립을 채운다
+        { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true, ocr:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
         { k:'scene',   label:'씬',       t:'combo', ref:'scenes', span:1 },
         // soft:true — 값이 있어도 "이 캠으로 찍었다"의 근거가 되지 않는다.

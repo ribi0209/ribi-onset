@@ -4,8 +4,7 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ingest, ingestMany, pickFiles, fmtBytes,
-         deviceSaveEnabled, saveToDevice, deviceFileName } from './media.js';
+import { ingest, ingestMany, pickFiles, fmtBytes } from './media.js';
 // cropBlob 은 크롭을 실제로 쓸 때만 불러온다 (첫 로딩을 가볍게)
 
 /* ---------------- DOM 헬퍼 ---------------- */
@@ -97,8 +96,11 @@ export function refList(key){ return REFS[key] || []; }
 /* ---------------- 사진 위젯 ---------------- */
 
 /**
- * 사진 타일. 빈 타일을 "탭하면 바로 카메라"가 열린다 (현장 속도 우선).
- * 갤러리에서 고르려면 우측 하단의 작은 🖼 버튼.
+ * 사진 타일.
+ *
+ * 앱 안에서 카메라를 열지 않는다 — 그렇게 찍은 사진은 기기 갤러리에 남지 않기 때문이다.
+ * 촬영은 태블릿 기본 카메라로 하고(갤러리에 정상 저장), 여기서는 그 사진을 불러온다.
+ * opts.cropOnPick 이면 불러오는 즉시 자르기 화면을 띄운다 (모니터 두 대 중 한 대만 쓸 때).
  */
 export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
   const box = el('div', { class:'photo-tile' + (opts.big ? ' big' : '') });
@@ -142,30 +144,36 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
         }
       }));
     } else {
-      // 촬영 / 갤러리 선택 둘 다 제공
       box.appendChild(el('div', { class:'photo-empty' }, [
-        el('button', { class:'btn tiny shot', title:'카메라로 촬영', onclick:(e)=>{ e.stopPropagation(); grab(true); } }, [
-          el('span', { class:'cam-ico', text:'📷' }),
-          el('span', { class:'cam-lbl', text:'촬영' }),
-        ]),
-        el('button', { class:'btn tiny ghost shot', title:'갤러리에서 선택', onclick:(e)=>{ e.stopPropagation(); grab(false); } }, [
+        el('button', { class:'btn tiny shot wide', title:'갤러리에서 사진 선택',
+                       onclick:(e)=>{ e.stopPropagation(); grab(); } }, [
           el('span', { class:'cam-ico', text:'🖼' }),
-          el('span', { class:'cam-lbl', text:'선택' }),
+          el('span', { class:'cam-lbl', text:'사진 선택' }),
         ]),
       ]));
     }
   }
-  async function grab(capture){
-    const files = await pickFiles({ capture });
+  async function grab(){
+    const files = await pickFiles({});
     if (!files.length) return;
-    // 카메라로 찍은 것만 기기에 남긴다 (갤러리에서 고른 건 이미 기기에 있다)
-    if (capture && deviceSaveEnabled()) saveToDevice(files[0], deviceFileName(opts.saveAs || []));
+
+    // 대표 이미지는 불러오자마자 자를 수 있게 한다.
+    // 모니터 두 대를 한 장에 찍었으면 여기서 한 대만 떼어 낸다.
+    let src = files[0];
+    if (opts.cropOnPick){
+      const out = await cropDialog(src, {
+        title:'쓸 영역 자르기',
+        desc:'모니터가 두 대면 「왼쪽 절반 / 오른쪽 절반」 으로 잡으세요. 한 대뿐이면 「자르지 않고 사용」.',
+      });
+      if (!out) return;            // 취소하면 아무것도 넣지 않는다
+      src = out;
+    }
+
     const p = progress(); p.set('이미지 압축 중', 40);
     try {
-      const ref = await ingest(files[0], preset);
+      const ref = await ingest(src, preset);
       setVal(ref); onDirty && onDirty();
       await render();
-      if (opts.onShot) opts.onShot(ref);
     } catch (e){ toast('이미지 처리 실패: ' + e.message, 'err'); }
     finally { p.done(); }
   }
@@ -791,7 +799,11 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         cell.appendChild(photoTile(
           () => R[f.k],
           (v) => { R[f.k] = v; },
-          f.preset || 'thumb', onDirty, { big: f.full }));
+          f.preset || 'thumb', onDirty, {
+            big: f.full,
+            cropOnPick: true,                                  // 대표 이미지는 고르면 바로 자르기
+            onShot: (f.ocr && ctx.onOcr) ? (ref) => ctx.onOcr(f, R, ref) : null,
+          }));
 
       } else if (f.t === 'sketch'){
         cell.appendChild(sketchPad(

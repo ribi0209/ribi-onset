@@ -388,6 +388,7 @@ td.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; letter-spacing:-.2px
 .crop-h.sw{ left:0;    top:100%; }
 .crop-h.se{ left:100%; top:100%; }
 .crop-hint{ font-size:12px; color:var(--dim); }
+.photo-empty .btn.shot.wide{ width:100%; }
 .photo-crop{
   position:absolute; left:2px; top:2px; width:22px; height:22px; font-size:12px;
   border:none; border-radius:6px; background:rgba(0,0,0,.55); color:#fff; cursor:pointer;

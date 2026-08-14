@@ -12,7 +12,7 @@ import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
   refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog
 } from './ui.js';
-import { ingest, pickFiles, deviceSaveEnabled, setDeviceSave, saveToDevice, deviceFileName } from './media.js';
+import { ingest, pickFiles } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
 
 const PAGE = 60;
@@ -468,6 +468,11 @@ export async function entityDetailView(root, entKey, id, go){
       clear(formHost);
       formHost.appendChild(await renderForm(rec, cfg.groups, entKey, save, {
         project, go, camRec: rec.cams[active],
+        // 대표 이미지의 ⌁ 버튼 → 모니터 오버레이를 읽어 이 캠의 캠 롤·클립을 채운다
+        onOcr: async (field, camRec, ref) => {
+          const changed = await readMonitorInto(camRec, ref);
+          if (changed){ save(); drawTabs(); await drawForm(); }
+        },
       }));
     }
     function drawTabs(){
@@ -482,15 +487,8 @@ export async function entityDetailView(root, entKey, id, go){
         ]));
       }
       tabBar.appendChild(el('span', { class:'grow' }));
-      tabBar.appendChild(el('button', {
-        class:'btn primary', text:'📷 모니터 촬영',
-        title:'캠 롤을 읽어 해당 캠 탭에 캠 롤·클립을 채웁니다',
-        onclick: async () => {
-          const cam = await shootMonitorToCam(rec, cfg, active, save);
-          if (!cam) return;
-          active = cam; drawTabs(); await drawForm();
-        },
-      }));
+      tabBar.appendChild(el('span', { class:'dim tiny',
+        text:'태블릿 카메라로 찍고 → 대표 이미지에서 사진 선택 → 자르기' }));
     }
 
     drawTabs();
@@ -510,95 +508,42 @@ function camSummary(d){
 }
 
 /**
- * 모니터를 찍어 캠 롤·클립을 읽고, 그 캠 탭에 채운다.
- * 판독값은 확인창을 거친다. 사진은 그 캠의 대표 이미지(없으면 현장 사진)로 들어간다.
- * @returns {Promise<string|null>} 값이 들어간 캠 키
+ * 대표 이미지에 들어간 모니터 사진에서 캠 롤·클립을 읽어 그 캠에 채운다.
+ * 촬영은 태블릿 기본 카메라로 하고(갤러리에 남는다), 앱은 그 사진을 불러와 자른 뒤 판독만 한다.
+ * 판독값은 확인창을 거친다 — 클립 번호가 조용히 틀리는 게 제일 위험하다.
+ *
+ * @returns {Promise<boolean>} 값이 바뀌었는지
  */
-async function shootMonitorToCam(rec, cfg, active, save){
-  const files = await pickFiles({ capture:true });
-  if (!files.length) return null;
-  // 자르기 전 '원본'을 기기에 남긴다 — 모니터 두 대가 다 들어간 사진이 그대로 보관된다
-  if (deviceSaveEnabled())
-    saveToDevice(files[0], deviceFileName([rec.episode, rec.scene, '모니터']));
-  // 한 장에 모니터가 두 대 찍혔으면, 같은 원본을 두 번 잘라 A·B 에 각각 넣는다
-  return applyMonitorShot(rec, cfg, active, save, files[0], 0);
-}
-
-async function applyMonitorShot(rec, cfg, active, save, source, round){
-  const cropped = await cropDialog(source, {
-    title: round === 0 ? '모니터 영역 자르기' : '다른 모니터 영역 자르기',
-    desc: '모니터가 두 대면 「왼쪽 절반 / 오른쪽 절반」 으로 한 대씩 잡으면 됩니다. 한 대뿐이면 그냥 「자르지 않고 사용」.',
-    preset: round === 0 ? null : 'right',
-  });
-  if (!cropped) return null;
-
-  const p = progress(); p.set('이미지 압축 중', 15);
-  let ref;
-  try { ref = await ingest(cropped, 'plate'); }
-  catch (e){ p.done(); toast('이미지 처리 실패: ' + e.message, 'err'); return null; }
-
-  let snapped = {}, text = '', confidence = null;
+async function readMonitorInto(camRec, ref){
+  if (!ref || !ref.mid) return false;
+  const p = progress(); p.set('준비 중', 3);
   const OCR = await import('./ocr.js');
+  let snapped = {}, text = '', confidence = null;
   try {
     const media = await DB.getMedia(ref.mid);
+    if (!media || !media.blob) throw new Error('사진을 찾을 수 없습니다');
     const r = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
     text = r.text; confidence = r.confidence;
     const all = OCR.parseMonitor(text, {});
-    // 이 화면에서 쓰는 건 캠 롤과 클립뿐이다
     if (all.camRoll) snapped.camRoll = all.camRoll;
     if (all.clip)    snapped.clip    = all.clip;
   } catch (e){
-    toast('판독 실패 — 값은 직접 입력하세요 (' + e.message + ')', 'warn', 4500);
+    p.done();
+    toast('판독 실패: ' + e.message, 'err', 4500);
+    return false;
   }
   p.done();
 
-  const readCam = (String(snapped.camRoll || '').match(/^([A-Za-z])/) || [,''])[1].toUpperCase();
-  const guess = cfg.cams.includes(readCam) ? readCam : active;
+  const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence);
+  if (!picked) return false;
 
-  const picked = await ocrReview(snapped, OCR.OCR_LABELS, text, confidence, {
-    targets: cfg.cams.map(c => ({ value:c, label:`${c}캠` })),
-    defaultTarget: guess,
-    targetLabel: readCam ? `${readCam}캠으로 읽혔습니다 — 어느 탭에 넣을까요` : '어느 캠에 넣을까요',
-  });
-  if (!picked){ await DB.delMedia(ref.mid); return null; }
-
-  const cam = picked.__target || guess;
-  const d = rec.cams[cam] = rec.cams[cam] || {};
-  if (picked.camRoll) d.camRoll = picked.camRoll;
-  if (picked.clip)    d.clip    = picked.clip;
-
-  // 대표 이미지가 비어 있으면 거기에, 아니면 현장 사진 빈 칸에 넣는다 (덮어쓰지 않는다)
-  if (!d.thumbnail || !d.thumbnail.mid){
-    d.thumbnail = ref;
-  } else {
-    const pf = allFields('scenes').find(f => f.k === 'photos');
-    const n = (pf && pf.n) || 14;
-    if (!Array.isArray(d.photos)) d.photos = new Array(n).fill(null);
-    while (d.photos.length < n) d.photos.push(null);
-    const slot = d.photos.findIndex(x => !x || !x.mid);
-    if (slot >= 0) d.photos[slot] = ref;
-    else { await DB.delMedia(ref.mid); toast('사진 칸이 가득 찼습니다', 'warn'); }
-  }
-
-  save();
-  toast(`${cam}캠 · ${[d.camRoll, d.clip].filter(Boolean).join(' ') || '사진 등록'}`, 'ok', 3000);
-
-  // 같은 원본에서 다른 캠도 떼어낼 수 있게 한 번 더 물어본다 (모니터 2대를 한 장에 찍은 경우)
-  if (round < cfg.cams.length - 1){
-    const more = await confirmBox('같은 사진에서 더 잘라낼까요',
-      '한 장에 모니터가 여러 대 찍혔다면 다른 영역을 잘라 다른 캠에 넣을 수 있습니다.',
-      '더 잘라내기');
-    if (more){
-      const next = await applyMonitorShot(rec, cfg, cam, save, source, round + 1);
-      if (next) return next;
-    }
-  }
-  return cam;
+  let n = 0;
+  if (picked.camRoll){ camRec.camRoll = picked.camRoll; n++; }
+  if (picked.clip){    camRec.clip    = picked.clip;    n++; }
+  toast(n ? `${[camRec.camRoll, camRec.clip].filter(Boolean).join(' ')} 입력됨` : '적용된 항목 없음',
+        n ? 'ok' : 'warn');
+  return n > 0;
 }
-
-/* 컷(cuts) 스토어는 남겨 두되 화면에서는 쓰지 않는다.
-   기록 단위가 "씬 + 캠 탭"으로 바뀌었기 때문이다.
-   과거 데이터는 백업 JSON 에 그대로 보존된다. */
 
 /* ===================== PROJECT ===================== */
 
@@ -777,28 +722,9 @@ export async function settingsView(root){
       }}),
     ]),
 
-    el('h3', { class:'sect', text:'촬영 원본 보관' }),
-    el('p', { class:'dim tiny', text:
-      '웹 앱은 기기 갤러리(DCIM)에 직접 쓸 수 없습니다. 앱 안에서 카메라를 열면 사진이 앱으로만 전달되고 갤러리에는 남지 않아요. ' +
-      '이 설정을 켜면 찍은 원본을 Download 폴더에도 한 벌 내려받습니다 — 갤러리의 「Download」 앨범에서 보입니다. ' +
-      '자르기 전 원본이라 모니터 두 대가 다 들어간 사진 그대로 보관됩니다.' }),
-    (() => {
-      const chk = el('input', { type:'checkbox', id:'devSave' });
-      chk.checked = deviceSaveEnabled();
-      chk.addEventListener('change', () => {
-        setDeviceSave(chk.checked);
-        toast(chk.checked ? '촬영 원본을 기기에도 저장합니다' : '앱에만 저장합니다', 'ok', 2000);
-      });
-      return el('label', { class:'row gap', style:'cursor:pointer' }, [
-        chk, el('span', { text:'촬영 원본을 기기에 저장' }),
-      ]);
-    })(),
-    el('p', { class:'dim tiny', text:
-      '처음 한 번은 Chrome 이 「파일 여러 개 다운로드 허용」 을 물어봅니다. 허용해야 계속 저장됩니다.' }),
-
     el('h3', { class:'sect', text:'모니터 OCR' }),
     el('p', { class:'dim tiny', text:
-      '테이크의 모니터 사진에서 캠 롤·클립·TC·FPS·셔터·EI·WB 를 읽어옵니다. 엔진(약 7MB)은 첫 사용 때 내려받고 그 뒤로는 오프라인에서도 동작합니다. 현장 나가기 전에 미리 받아두세요.' }),
+      '씬 상세의 대표 이미지에 모니터 사진을 넣고 ⌁ 버튼을 누르면 캠 롤·클립을 읽어 그 캠에 채웁니다. 엔진(약 7MB)은 첫 사용 때 내려받고 그 뒤로는 오프라인에서도 동작합니다. 현장 나가기 전에 미리 받아두세요.' }),
     el('div', { class:'row gap wrap' }, [
       el('button', { class:'btn', text:'OCR 엔진 미리 받기', onclick: async (e) => {
         const p = progress(); p.set('내려받는 중', 3);

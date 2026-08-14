@@ -101,12 +101,15 @@ const camTabs = main.querySelectorAll('.cam-tab');
 ok(camTabs.length===4, `캠 탭 A~D 4개 (${camTabs.length})`);
 ok(Array.from(camTabs).map(t=>t.querySelector('b').textContent).join('')==='ABCD', '탭 라벨 A B C D');
 ok(camTabs[0].classList.contains('on'), '첫 탭이 선택 상태');
-ok(Array.from(main.querySelectorAll('.cam-tabs button')).some(b=>b.textContent.includes('모니터 촬영')),
-   '모니터 촬영 버튼');
+ok(!Array.from(main.querySelectorAll('button')).some(b=>b.textContent.includes('모니터 촬영')),
+   '앱 내 촬영 버튼 없음 — 태블릿 카메라로 찍고 불러온다');
 
-const shotBtns = main.querySelectorAll('.photo-empty .btn.shot');
-ok(shotBtns.length>=2, `빈 썸네일에 버튼 ${shotBtns.length}개`);
-ok(shotBtns[0].textContent.includes('촬영') && shotBtns[1].textContent.includes('선택'), '촬영 / 선택 둘 다 제공');
+// 빈 사진칸마다 버튼이 하나씩만 있어야 한다 (예전엔 촬영/선택 두 개였다)
+const emptyTiles = Array.from(main.querySelectorAll('.photo-tile .photo-empty'));
+ok(emptyTiles.length > 0, `빈 사진칸 ${emptyTiles.length}개`);
+ok(emptyTiles.every(t => t.querySelectorAll('.btn.shot').length === 1), '칸마다 버튼 1개');
+ok(emptyTiles[0].textContent.includes('사진 선택'), '갤러리에서 불러오기만 제공');
+ok(!main.textContent.includes('📷'), '앱 내 카메라 아이콘 없음');
 
 const sceneId = main.querySelector('.detail-head .idline code').textContent;
 
