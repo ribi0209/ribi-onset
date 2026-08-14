@@ -10,7 +10,7 @@ import {
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
-  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview
+  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog
 } from './ui.js';
 import { ingest, pickFiles } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
@@ -517,10 +517,21 @@ function camSummary(d){
 async function shootMonitorToCam(rec, cfg, active, save){
   const files = await pickFiles({ capture:true });
   if (!files.length) return null;
+  // 한 장에 모니터가 두 대 찍혔으면, 같은 원본을 두 번 잘라 A·B 에 각각 넣는다
+  return applyMonitorShot(rec, cfg, active, save, files[0], 0);
+}
+
+async function applyMonitorShot(rec, cfg, active, save, source, round){
+  const cropped = await cropDialog(source, {
+    title: round === 0 ? '모니터 영역 자르기' : '다른 모니터 영역 자르기',
+    desc: '모니터가 두 대면 「왼쪽 절반 / 오른쪽 절반」 으로 한 대씩 잡으면 됩니다. 한 대뿐이면 그냥 「자르지 않고 사용」.',
+    preset: round === 0 ? null : 'right',
+  });
+  if (!cropped) return null;
 
   const p = progress(); p.set('이미지 압축 중', 15);
   let ref;
-  try { ref = await ingest(files[0], 'plate'); }
+  try { ref = await ingest(cropped, 'plate'); }
   catch (e){ p.done(); toast('이미지 처리 실패: ' + e.message, 'err'); return null; }
 
   let snapped = {}, text = '', confidence = null;
@@ -568,6 +579,17 @@ async function shootMonitorToCam(rec, cfg, active, save){
 
   save();
   toast(`${cam}캠 · ${[d.camRoll, d.clip].filter(Boolean).join(' ') || '사진 등록'}`, 'ok', 3000);
+
+  // 같은 원본에서 다른 캠도 떼어낼 수 있게 한 번 더 물어본다 (모니터 2대를 한 장에 찍은 경우)
+  if (round < cfg.cams.length - 1){
+    const more = await confirmBox('같은 사진에서 더 잘라낼까요',
+      '한 장에 모니터가 여러 대 찍혔다면 다른 영역을 잘라 다른 캠에 넣을 수 있습니다.',
+      '더 잘라내기');
+    if (more){
+      const next = await applyMonitorShot(rec, cfg, cam, save, source, round + 1);
+      if (next) return next;
+    }
+  }
   return cam;
 }
 

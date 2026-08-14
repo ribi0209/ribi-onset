@@ -90,5 +90,15 @@ console.log('== 에셋(연결) 드롭다운이 옆 칸과 같은 형식인가 ==
   ok(/\.link-wrap\.backlink\{[^}]*flex-direction:row/.test(css), '읽기 전용 역방향 목록은 가로 배치 유지');
 }
 
+console.log('== 노트 칸은 한 줄로 끊는다 ==');
+{
+  const m = css.match(/td\.note\{([^}]*)\}/);
+  ok(!!m, '노트 칸 규칙 존재');
+  const body = (m ? m[1] : '').replace(/\s+/g,'');
+  ok(body.includes('white-space:nowrap'), '한 줄로 유지');
+  ok(body.includes('text-overflow:ellipsis'), '넘치면 … 로 끊음');
+  ok(!body.includes('line-clamp'), '두 줄 클램프는 제거됨');
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

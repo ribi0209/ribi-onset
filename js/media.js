@@ -47,6 +47,41 @@ export async function compress(file, preset = 'photo'){
   return { blob, width: w, height: h, originalBytes: file.size || blob.size };
 }
 
+/**
+ * 화면에 보이는 좌표(축소된 이미지 기준)를 원본 픽셀 좌표로 옮긴다.
+ * 이미지가 화면에 맞춰 줄어든 상태로 드래그하므로, 이 변환을 빠뜨리면
+ * 엉뚱한 데가 잘린다. 경계를 벗어나지 않게 잘라 맞춘다.
+ */
+export function mapCropRect(rect, dispW, dispH, natW, natH){
+  if (!dispW || !dispH) return { x:0, y:0, w:natW, h:natH };
+  const sx = natW / dispW, sy = natH / dispH;
+  let x = Math.round(rect.x * sx);
+  let y = Math.round(rect.y * sy);
+  let w = Math.round(rect.w * sx);
+  let h = Math.round(rect.h * sy);
+  x = Math.max(0, Math.min(x, natW - 1));
+  y = Math.max(0, Math.min(y, natH - 1));
+  w = Math.max(1, Math.min(w, natW - x));
+  h = Math.max(1, Math.min(h, natH - y));
+  return { x, y, w, h };
+}
+
+/** 원본 Blob 에서 지정 영역만 잘라낸 Blob 을 만든다 (원본은 건드리지 않는다) */
+export async function cropBlob(source, rect, quality = 0.9){
+  const bmp = await loadBitmap(source);
+  const r = mapCropRect(rect, rect.dispW || bmp.width, rect.dispH || bmp.height, bmp.width, bmp.height);
+  const canvas = document.createElement('canvas');
+  canvas.width = r.w; canvas.height = r.h;
+  const ctx = canvas.getContext('2d', { alpha:false });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+  if (bmp.close) bmp.close();
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+  // ingest 가 파일명을 참조하므로 붙여 둔다
+  try { blob.name = 'crop.jpg'; } catch {}
+  return blob;
+}
+
 /** File → media 스토어 저장 후 레코드에 넣을 참조 반환 */
 export async function ingest(file, preset = 'photo'){
   const { blob, width, height, originalBytes } = await compress(file, preset);

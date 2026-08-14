@@ -353,9 +353,8 @@ console.log('== 목록의 로케이션 표기 / 노트 셀 ==');
   const noteTd = main.querySelector('tr.drow td.note');
   ok(!!noteTd, '노트 칸에 클램프 클래스가 붙는다');
   ok(noteTd.getAttribute('title') === scene.shotNote, '잘린 내용은 툴팁으로 전체 확인 가능');
-  const css = fs.readFileSync('../css/app.css','utf8');
-  ok(/td\.note\{[^}]*-webkit-line-clamp:2/.test(css.replace(/\s+/g,'')) ||
-     /td\.note\{[\s\S]*?-webkit-line-clamp:\s*2/.test(css), '두 줄로 자른다');
+  const css = fs.readFileSync('../css/app.css','utf8').replace(/\s+/g,'');
+  ok(/td\.note\{[^}]*text-overflow:ellipsis/.test(css), '한 줄로 두고 넘치면 … 로 끊는다');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
