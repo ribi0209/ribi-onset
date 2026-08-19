@@ -12,22 +12,37 @@ export const PRESETS = {
   plate: { maxEdge: 2560, quality: 0.85 },   // 플레이트 / HDRI 소스
 };
 
+/** <img> 로 디코드. 브라우저가 화면에 띄울 수 있는 형식이면 무조건 성공한다. */
+function loadImageEl(file){
+  const url = URL.createObjectURL(file);
+  return new Promise((res, rej) => {
+    const i = new Image();
+    i.onload  = () => { setTimeout(() => URL.revokeObjectURL(url), 1000); res(i); };
+    i.onerror = () => {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      // 이벤트 객체로 거부하면 화면에 "실패: undefined" 만 뜨고 원인을 알 수 없다
+      rej(new Error(`이미지를 읽지 못했습니다 (형식: ${file.type || '알 수 없음'})`));
+    };
+    i.src = url;
+  });
+}
+
+/**
+ * 이미지 디코드.
+ *
+ * <img> 를 **먼저** 쓴다. createImageBitmap 은 갤러리에서 가져온 일부 사진에서
+ * 그냥 실패하는데(자르기 화면에는 멀쩡히 보이던 사진인데도), 그러면 등록 자체가 막혔다.
+ * <img> 는 브라우저가 화면에 그릴 수 있는 것이면 전부 통과한다.
+ * EXIF 회전도 Chrome 이 기본으로 반영하므로 naturalWidth/Height 와 drawImage 가 서로 맞는다.
+ */
 async function loadBitmap(file){
   try {
-    return await createImageBitmap(file, { imageOrientation: 'from-image' });
+    return await loadImageEl(file);
   } catch (e) {
-    // 구형 폴백. 여기서 실패할 때 이벤트 객체로 거부하면 e.message 가 undefined 라
-    // 화면에 "실패: undefined" 만 뜨고 원인을 알 수 없다 → 반드시 Error 로 던진다.
-    const url = URL.createObjectURL(file);
+    // <img> 가 못 읽는 경우에만 ImageBitmap 을 시도한다
     try {
-      const img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.onload  = () => res(i);
-        i.onerror = () => rej(new Error(`이미지를 읽지 못했습니다 (형식: ${file.type || '알 수 없음'})`));
-        i.src = url;
-      });
-      return img;
-    } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+      return await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch { throw e; }
   }
 }
 
@@ -35,7 +50,9 @@ async function loadBitmap(file){
 export async function compress(file, preset = 'photo'){
   const { maxEdge, quality } = PRESETS[preset] || PRESETS.photo;
   const bmp = await loadBitmap(file);
-  const w0 = bmp.width, h0 = bmp.height;
+  const w0 = bmp.naturalWidth || bmp.width;
+  const h0 = bmp.naturalHeight || bmp.height;
+  if (!w0 || !h0) throw new Error('이미지 크기를 읽지 못했습니다');
   const scale = Math.min(1, maxEdge / Math.max(w0, h0));
   const w = Math.max(1, Math.round(w0 * scale));
   const h = Math.max(1, Math.round(h0 * scale));

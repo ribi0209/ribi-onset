@@ -6,7 +6,7 @@
 import * as DB from './db.js';
 import {
   ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD,
-  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, usedCams, camValues
+  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, camFieldLine, usedCams, camValues
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -163,6 +163,7 @@ export async function entityListView(root, entKey, go){
     }
   }
   const cellText = (r, k) => k === '__cams' ? camSummaryLine(entKey, r)
+                           : k === '__vfx'  ? camFieldLine(entKey, r, 'vfxType')
                            : refMaps[k] ? (refMaps[k][r[k]] || '') : r[k];
 
   /** 표에 보이는 문자열 기준으로 정렬한다 (로케이션은 id 가 아니라 이름으로 정렬돼야 한다).

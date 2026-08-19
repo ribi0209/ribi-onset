@@ -66,5 +66,27 @@ console.log('== 오류 문구가 undefined 로 새지 않는가 ==');
      '화면에 띄우는 오류는 전부 errText 를 거친다 (원시 .message 직접 사용 없음)');
 }
 
+console.log('== 자르지 않아도 등록되는가 ==');
+{
+  // 실제로 났던 문제: 영역을 안 잡으면 원본을 그대로 ingest 했는데,
+  // 그 경로가 createImageBitmap 을 쓰고 있어서 "이미지 처리 실패" 가 났다.
+  // 자를 때는 화면의 <img> 를 쓰니 통과, 안 자를 때만 실패 — 증상이 정확히 그랬다.
+  const media = fs.readFileSync('../js/media.js','utf8');
+  const loadBitmap = media.slice(media.indexOf('async function loadBitmap'));
+  const body = loadBitmap.slice(0, loadBitmap.indexOf('\n}'));
+  const imgAt = body.indexOf('loadImageEl');
+  const bmpAt = body.indexOf('createImageBitmap');
+  ok(imgAt >= 0 && bmpAt >= 0, '두 방식 모두 준비돼 있다');
+  ok(imgAt < bmpAt, '<img> 를 먼저 쓴다 (화면에 뜨는 사진이면 무조건 통과)');
+
+  ok(/naturalWidth \|\| bmp\.width/.test(media) || /bmp\.naturalWidth/.test(media),
+     'compress 가 <img> 의 실제 크기를 읽는다');
+  ok(/이미지 크기를 읽지 못했습니다/.test(media), '크기를 못 읽으면 원인이 보이는 오류');
+
+  const ui = fs.readFileSync('../js/ui.js','utf8');
+  ok(/그대로 등록/.test(ui), "영역을 안 잡으면 주 버튼이 '그대로 등록' 으로 바뀐다");
+  ok(!/자르지 않고 사용/.test(ui.split('const okBtn')[0] || ''), '중복되는 별도 버튼은 없앴다');
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

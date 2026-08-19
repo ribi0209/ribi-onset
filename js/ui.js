@@ -169,7 +169,7 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
     if (opts.cropOnPick){
       const out = await cropDialog(src, {
         title:'쓸 영역 자르기',
-        desc:'모니터가 두 대면 「왼쪽 절반 / 오른쪽 절반」 으로 잡으세요. 한 대뿐이면 「자르지 않고 사용」.',
+        desc:'자를 필요가 없으면 바로 「그대로 등록」. 모니터가 두 대면 「왼쪽 절반 / 오른쪽 절반」 으로 한 대만 잡으세요.',
       });
       if (!out) return;            // 취소하면 아무것도 넣지 않는다
       src = out;
@@ -204,7 +204,8 @@ export function cropDialog(source, opts = {}){
     const box = el('div', { class:'crop-box', hidden:'' });
     for (const h of ['nw','ne','sw','se']) box.appendChild(el('i', { class:'crop-h ' + h, dataset:{ h } }));
     const stage = el('div', { class:'crop-stage' }, [img, box]);
-    const hint = el('div', { class:'crop-hint', text:'잘라낼 영역을 손가락이나 S펜으로 끌어서 잡으세요.' });
+    const hint = el('div', { class:'crop-hint',
+      text:'자를 필요가 없으면 그냥 「그대로 등록」. 잘라 쓰려면 영역을 끌어서 잡으세요.' });
 
     let rect = null;              // 화면(축소) 좌표 기준
     let mode = null, startX = 0, startY = 0, base = null;
@@ -217,6 +218,8 @@ export function cropDialog(source, opts = {}){
       return { x: Math.max(0, Math.min(r.x, v.w - w)), y: Math.max(0, Math.min(r.y, v.h - h)), w, h };
     };
     function paint(){
+      // 영역을 안 잡았으면 주 버튼이 '그대로 등록' 이 된다 — 자르기가 필요 없는 사진은 한 번에 끝난다
+      if (okBtn) okBtn.textContent = rect ? '이 영역 사용' : '그대로 등록';
       if (!rect){ box.hidden = true; return; }
       box.hidden = false;
       box.style.left = rect.x + 'px'; box.style.top = rect.y + 'px';
@@ -290,6 +293,8 @@ export function cropDialog(source, opts = {}){
       finally { p.done(); }
     }
 
+    const okBtn = el('button', { class:'btn primary big', text:'그대로 등록', onclick:apply });
+
     const ov = el('div', { class:'overlay', onclick:(e)=>{ if (e.target === ov) close(null); } }, [
       el('div', { class:'dialog wide' }, [
         el('h3', { text: opts.title || '영역 자르기' }),
@@ -303,8 +308,7 @@ export function cropDialog(source, opts = {}){
         stage, hint,
         el('div', { class:'row end gap' }, [
           el('button', { class:'btn ghost', text:'취소', onclick:()=>close(null) }),
-          el('button', { class:'btn ghost', text:'자르지 않고 사용', onclick:()=>close(source) }),
-          el('button', { class:'btn primary', text:'이 영역 사용', onclick:apply }),
+          okBtn,
         ]),
       ])
     ]);
@@ -696,10 +700,11 @@ async function linkWidget(field, rec, onDirty){
   const wrap = el('div', { class:'link-wrap' });
   const target = field.to;
   const store = target;
-  const all = await DB.list(store);
   const cfg = (await import('./schema.js')).ENTITIES[target];
-
   const labelFor = (r) => (cfg.titleFields.map(k => r[k]).filter(Boolean).join(' / ') || r.id);
+  // 고르는 목록은 언제나 가나다순
+  const all = (await DB.list(store)).slice()
+    .sort((a,b) => labelFor(a).localeCompare(labelFor(b), 'ko', { numeric:true }));
 
   function cur(){
     const v = rec[field.k];
@@ -863,7 +868,9 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
         const { ENTITIES, displayName } = await import('./schema.js');
         const sel = el('select', { class:'inp' });
         sel.appendChild(el('option', { value:'', text:'— 선택 —' }));
-        const list = await DB.list(f.to);
+        // 등록 순서가 아니라 이름 가나다순으로 — 로케이션이 쌓이면 순서대로여야 찾는다
+        const list = (await DB.list(f.to)).slice().sort((a,b) =>
+          displayName(f.to, a).localeCompare(displayName(f.to, b), 'ko', { numeric:true }));
         for (const r of list) sel.appendChild(el('option', { value:r.id, text: displayName(f.to, r) }));
         if (R[f.k] && !list.some(r => r.id === R[f.k]))
           sel.appendChild(el('option', { value:R[f.k], text:'(삭제된 항목)' }));

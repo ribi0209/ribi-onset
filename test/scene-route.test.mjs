@@ -168,10 +168,11 @@ console.log('== 목록: 캠 기록 열 / 대표 이미지 A 우선 ==');
   ok(ths[2]==='에피소드' && ths[3]==='씬' && ths[4]==='캠 기록',
      `캠 기록이 촬영 유닛 자리에 (${ths.slice(2,6).join(' / ')})`);
   ok(!ths.includes('INT / EXT') && !ths.includes('시제'), `INT/EXT · 시제 열 제거 (${ths.join('/')})`);
-  // NO · 썸네일 · 에피소드 · 씬 · 캠 기록 · 로케이션 · 씬 노트 · 벤더
-  ok(ths[5]==='로케이션', `로케이션 (${ths[5]})`);
-  ok(ths[6]==='씬 노트', `INT/EXT·시제 자리에 씬 노트 (${ths[6]})`);
-  ok(ths[7]==='벤더', `벤더는 그대로 마지막 (${ths[7]})`);
+  // NO · 썸네일 · 에피소드 · 씬 · 캠 기록 · 작업 타입 · 로케이션 · 씬 노트 · 벤더
+  ok(ths[5]==='작업 타입', `캠 기록 옆에 작업 타입 (${ths[5]})`);
+  ok(ths[6]==='로케이션', `로케이션 (${ths[6]})`);
+  ok(ths[7]==='씬 노트', `씬 노트 (${ths[7]})`);
+  ok(ths[8]==='벤더', `벤더는 그대로 마지막 (${ths[8]})`);
 
   const { thumbOf } = await import('../js/schema.js');
   const mk = (cams) => ({ cams });
@@ -196,13 +197,8 @@ console.log('== 자동 저장 유실 방지 ==');
 
   const sceneField = () => Array.from(main.querySelectorAll('.field'))
     .find(f => f.querySelector('label') && f.querySelector('label').textContent === '씬');
-  // 목록에 없는 씬 번호 → '직접 입력' 으로 전환해서 친다
-  const sel = sceneField().querySelector('.combo select');
-  const custom = Array.from(sel.options).find(o=>o.textContent.includes('직접 입력'));
-  sel.value = custom.value; sel.dispatchEvent(new w.Event('change',{bubbles:true}));
-  await wait(120);
-  const inp = sceneField().querySelector('.combo input');
-  ok(!!inp, "'직접 입력' 을 고르면 자유 입력칸");
+  const inp = sceneField().querySelector('input');
+  ok(!!inp, '씬은 바로 칠 수 있는 입력칸');
   inp.value = '7-3';
   inp.dispatchEvent(new w.Event('input',{bubbles:true}));   // change(포커스 이탈) 없이 input 만
 
@@ -355,6 +351,53 @@ console.log('== 목록의 로케이션 표기 / 노트 셀 ==');
   ok(noteTd.getAttribute('title') === scene.shotNote, '잘린 내용은 툴팁으로 전체 확인 가능');
   const css = fs.readFileSync('../css/app.css','utf8').replace(/\s+/g,'');
   ok(/td\.note\{[^}]*text-overflow:ellipsis/.test(css), '한 줄로 두고 넘치면 … 로 끊는다');
+}
+
+console.log('== 목록의 작업 타입 요약 ==');
+{
+  const { camFieldLine } = await import('../js/schema.js');
+  const f = (c) => camFieldLine('scenes', { cams:c }, 'vfxType');
+  ok(f({A:{camRoll:'A1',vfxType:'3D'},B:{camRoll:'B1',vfxType:'3D'},C:{},D:{}}) === '3D',
+     '캠이 전부 같은 타입이면 값만');
+  ok(f({A:{camRoll:'A1',vfxType:'3D'},B:{camRoll:'B1',vfxType:'2D'},C:{},D:{}}) === 'A: 3D · B: 2D',
+     '다르면 캠을 붙여서');
+  ok(f({A:{camRoll:'A1',vfxType:'3D'},B:{camRoll:'B1'},C:{},D:{}}) === 'A: 3D',
+     '한쪽만 지정했으면 그것만');
+  ok(f({A:{camRoll:'A1'},B:{},C:{},D:{}}) === '', '지정 안 했으면 빈 값');
+}
+
+console.log('== 씬 번호는 직접 입력 ==');
+{
+  const { fieldMap } = await import('../js/schema.js');
+  ok(fieldMap('scenes').scene.t === 'text', `드롭다운이 아니라 텍스트 입력 (${fieldMap('scenes').scene.t})`);
+
+  const main = w.document.getElementById('main');
+  const scene = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
+  await wait(300);
+  const sceneField = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent === '씬');
+  ok(!!sceneField.querySelector('input'), '바로 칠 수 있는 입력칸');
+  ok(!sceneField.querySelector('select'), '드롭다운 없음 (씬이 수백 개면 못 찾는다)');
+}
+
+console.log('== 로케이션 드롭다운 가나다순 ==');
+{
+  const main = w.document.getElementById('main');
+  const p = await DB.getProject();
+  for (const n of ['하늘공원','가락시장','나루터','다산로']){
+    await DB.put('locations', { id:'LOC-'+n, projectId:p.id, mainLocation:n });
+  }
+  const scene = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
+  await wait(400);
+  const locSel = Array.from(main.querySelectorAll('.field'))
+    .find(f => f.querySelector('label') && f.querySelector('label').textContent === '로케이션')
+    .querySelector('select');
+  const opts = Array.from(locSel.options).slice(1).map(o => o.textContent)
+    .filter(t => ['하늘공원','가락시장','나루터','다산로'].includes(t));
+  ok(opts.join(',') === '가락시장,나루터,다산로,하늘공원',
+     `등록 순서가 아니라 가나다순 (${opts.join(',')})`);
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

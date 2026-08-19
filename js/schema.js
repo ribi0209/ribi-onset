@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v30 · 2026-08-12';
+export const BUILD = 'v31 · 2026-08-13';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -102,7 +102,7 @@ export const DEFAULT_REFS = {
 /* Setting 탭에 노출할 그룹 */
 export const REF_GROUPS = [
   { title:'Scene / Cut', keys:{
-      episodes:'에피소드 (드라마)', scenes:'씬', cutNos:'컷 번호', units:'유닛',
+      episodes:'에피소드 (드라마)', cutNos:'컷 번호', units:'유닛',
       framings:'사이즈 / 앵글',
       intExt:'INT/EXT', tod:'시간대', takeStates:'테이크 판정' } },
   { title:'VFX', keys:{
@@ -213,7 +213,7 @@ export const ENTITIES = {
       { k:'tod',     ref:'tod',      label:'시제' },
       { k:'vendor',  ref:'vendors',  label:'벤더' },
     ],
-    listCols:['episode','scene','__cams','locationId','shotNote','vendor'],
+    listCols:['episode','scene','__cams','__vfx','locationId','shotNote','vendor'],
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
              'locationId','vendor','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
@@ -224,7 +224,8 @@ export const ENTITIES = {
         // ocr:true → 사진 위의 ⌁ 버튼으로 모니터 오버레이를 읽어 캠 롤·클립을 채운다
         { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true, ocr:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
-        { k:'scene',   label:'씬',       t:'combo', ref:'scenes', span:1 },
+        // 씬 번호는 프로젝트마다 수백 개가 되어 드롭다운으로는 못 찾는다 → 직접 입력
+        { k:'scene',   label:'씬',       t:'text', span:1, hint:'예) 12-3' },
         // soft:true — 값이 있어도 "이 캠으로 찍었다"의 근거가 되지 않는다.
         // 유닛은 직전 씬에서 자동 상속되므로, 이걸로 세면 찍지도 않은 캠이 물량에 잡힌다.
         { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1, cam:true, soft:true },
@@ -537,6 +538,21 @@ export function camValues(cfg, r, key){
   return cfg.cams.map(c => (r.cams[c] || {})[key]).filter(Boolean);
 }
 
+/**
+ * 캠별로 흩어진 한 필드를 목록용 한 줄로 요약한다.
+ * 캠이 전부 같은 값이면 값만 ('3D'), 다르면 캠을 붙인다 ('A: 3D · B: 2D').
+ */
+export function camFieldLine(entKey, r, key){
+  const cfg = ENTITIES[entKey];
+  if (!Array.isArray(cfg.cams) || !r || !r.cams) return '';
+  const used = usedCams(entKey, r);
+  const pairs = used.map(c => [c, (r.cams[c] || {})[key]]).filter(([,v]) => v);
+  if (!pairs.length) return '';
+  const vals = Array.from(new Set(pairs.map(([,v]) => v)));
+  if (vals.length === 1 && pairs.length === used.length) return vals[0];
+  return pairs.map(([c,v]) => `${c}: ${v}`).join(' · ');
+}
+
 /** 캠별 기록을 한 줄로 — 'A: A027 C002 · B: B027 C001' */
 export function camSummaryLine(entKey, r){
   const cfg = ENTITIES[entKey];
@@ -628,7 +644,7 @@ export function labelOf(ent, key){
   const f = fieldMap(ent)[key];
   if (f) return f.label;
   return { id:'ID', sceneId:'씬 ID', episode:'에피소드', scene:'씬',
-           __cams:'캠 기록',
+           __cams:'캠 기록', __vfx:'작업 타입',
            takeCount:'테이크 수', okTakes:'OK 테이크',
            createdAt:'생성', updatedAt:'수정' }[key] || key;
 }
