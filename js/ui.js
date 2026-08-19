@@ -145,7 +145,10 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
             await DB.delMedia(v.mid);            // 자른 결과로 대체한다
             setVal(ref); onDirty && onDirty();
             await render();
-          } catch (err){ toast('저장 실패: ' + errText(err), 'err'); }
+          } catch (err){
+            console.error('crop save failed', err);
+            toast('저장 실패: ' + errText(err), 'err', 8000);
+          }
           finally { p.done(); }
         }
       }));
@@ -180,7 +183,12 @@ export function photoTile(getVal, setVal, preset, onDirty, opts = {}){
       const ref = await ingest(src, preset);
       setVal(ref); onDirty && onDirty();
       await render();
-    } catch (e){ toast('이미지 처리 실패: ' + errText(e), 'err'); }
+    } catch (e){
+      // 어떤 파일에서 났는지까지 남긴다. 이게 없으면 "또 오류" 로만 돌아온다.
+      const info = `${files[0].name || '이름없음'} · ${files[0].type || '형식모름'} · ${fmtBytes(files[0].size||0)}`;
+      console.error('photo ingest failed', info, e);
+      toast('사진 등록 실패: ' + errText(e) + ' — ' + info, 'err', 8000);
+    }
     finally { p.done(); }
   }
   render();

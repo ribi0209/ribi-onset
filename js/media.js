@@ -53,19 +53,36 @@ export async function compress(file, preset = 'photo'){
   const w0 = bmp.naturalWidth || bmp.width;
   const h0 = bmp.naturalHeight || bmp.height;
   if (!w0 || !h0) throw new Error('이미지 크기를 읽지 못했습니다');
-  const scale = Math.min(1, maxEdge / Math.max(w0, h0));
-  const w = Math.max(1, Math.round(w0 * scale));
-  const h = Math.max(1, Math.round(h0 * scale));
 
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(bmp, 0, 0, w, h);
+  // 요청한 크기로 안 되면 절반씩 줄여 가며 다시 시도한다.
+  // 태블릿에서 아주 큰 사진(1억 화소급)은 캔버스가 조용히 실패하는데,
+  // 그때 toBlob 이 null 을 돌려주고 그대로 저장으로 넘어가 엉뚱한 곳에서 터졌다.
+  let edge = maxEdge;
+  let lastErr = null;
+  for (let attempt = 0; attempt < 4; attempt++){
+    const scale = Math.min(1, edge / Math.max(w0, h0));
+    const w = Math.max(1, Math.round(w0 * scale));
+    const h = Math.max(1, Math.round(h0 * scale));
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) throw new Error('캔버스를 만들지 못했습니다');
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, w, h);
+
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+      if (!blob || !blob.size) throw new Error(`이미지 변환 실패 (${w}×${h})`);
+
+      if (bmp.close) bmp.close();
+      return { blob, width: w, height: h, originalBytes: file.size || blob.size };
+    } catch (e){
+      lastErr = e;
+      edge = Math.max(320, Math.round(edge / 2));
+    }
+  }
   if (bmp.close) bmp.close();
-
-  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
-  return { blob, width: w, height: h, originalBytes: file.size || blob.size };
+  throw new Error(`${lastErr && lastErr.message || '이미지 변환 실패'} · 원본 ${w0}×${h0}, ${fmtBytes(file.size||0)}`);
 }
 
 /**
@@ -117,7 +134,23 @@ export async function cropFromImage(imgEl, rect, dispW, dispH, quality = 0.92){
 /** File → media 스토어 저장 후 레코드에 넣을 참조 반환 */
 export async function ingest(file, preset = 'photo'){
   const { blob, width, height, originalBytes } = await compress(file, preset);
-  return putMedia(blob, { name: file.name || 'capture.jpg', width, height, originalBytes });
+  try {
+    return await putMedia(blob, { name: file.name || 'capture.jpg', width, height, originalBytes });
+  } catch (e){
+    // 저장 단계 실패는 대부분 기기 저장공간이다 — 그냥 "실패" 라고만 하면 원인을 알 수 없다
+    const name = (e && (e.name || e.message)) || '';
+    if (/quota|저장|space/i.test(String(name))){
+      let usage = '';
+      try {
+        if (navigator.storage && navigator.storage.estimate){
+          const q = await navigator.storage.estimate();
+          usage = ` (사용 ${fmtBytes(q.usage||0)} / 한도 ${fmtBytes(q.quota||0)})`;
+        }
+      } catch {}
+      throw new Error(`기기 저장공간이 부족합니다${usage}. Backup 에서 내보낸 뒤 정리하세요.`);
+    }
+    throw e;
+  }
 }
 
 /** 여러 장 순차 처리 (동시 처리 시 태블릿에서 메모리 스파이크) */
