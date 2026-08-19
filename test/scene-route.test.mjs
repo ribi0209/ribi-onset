@@ -331,8 +331,8 @@ console.log('== 목록의 로케이션 표기 / 노트 셀 ==');
 {
   const { displayName } = await import('../js/schema.js');
   const loc = { mainLocation:'조양체육관', subLocation:'2층 복도', setId:'SET-012' };
-  ok(displayName('locations', loc) === '조양체육관 — 2층 복도',
-     `대장소 — 소장소 만 (${displayName('locations', loc)})`);
+  ok(displayName('locations', loc) === '조양체육관/2층 복도',
+     `대장소/소장소 (${displayName('locations', loc)})`);
   ok(!displayName('locations', loc).includes('SET-012'), 'SET ID 는 빠진다');
   ok(displayName('locations', { mainLocation:'팔복사무실' }) === '팔복사무실', '소장소가 없으면 대장소만');
 
@@ -398,6 +398,33 @@ console.log('== 로케이션 드롭다운 가나다순 ==');
     .filter(t => ['하늘공원','가락시장','나루터','다산로'].includes(t));
   ok(opts.join(',') === '가락시장,나루터,다산로,하늘공원',
      `등록 순서가 아니라 가나다순 (${opts.join(',')})`);
+}
+
+console.log('== 목록 폭 (가로 스크롤 방지) ==');
+{
+  const { camSummaryLine } = await import('../js/schema.js');
+  const r = { cams:{ A:{camRoll:'A027',clip:'C002'}, B:{camRoll:'B027',clip:'C001'}, C:{}, D:{} } };
+  const line = camSummaryLine('scenes', r);
+  ok(line === 'A027 C002 / B027 C001', `캠 이름 접두사 없이 (${line})`);
+  ok(!line.includes(':'), '"A:" 같은 접두사 없음 — 캠 롤이 이미 캠을 말해 준다');
+  ok(!line.includes('·'), '구분자는 슬래시');
+  ok(camSummaryLine('scenes', { cams:{A:{camRoll:'A027',clip:'C002'},B:{},C:{},D:{}} }) === 'A027 C002',
+     '한 대만 찍었으면 슬래시 없음');
+
+  // 짧은 열은 내용만큼만 차지해야 남는 폭이 로케이션·노트로 간다
+  const main = w.document.getElementById('main');
+  await V.entityListView(main, 'scenes', ()=>{});
+  await wait(300);
+  const th = (name) => Array.from(main.querySelectorAll('.dtable thead th'))
+    .find(t => (t.querySelector('span')||t).textContent === name);
+  for (const [name, cls] of [['에피소드','col-episode'],['씬','col-scene'],
+                             ['캠 기록','col-cams'],['작업 타입','col-vfx'],['벤더','col-vendor']])
+    ok(th(name) && th(name).classList.contains(cls), `${name} 열에 폭 조절 클래스 (${cls})`);
+
+  const css = fs.readFileSync('../css/app.css','utf8').replace(/\s+/g,'');
+  ok(/col-episode[^{]*\{[^}]*width:1%/.test(css) || /col-episode,[^{]*\{[^}]*width:1%/.test(css)
+     || css.includes('width:1%;white-space:nowrap'), '짧은 열은 내용 폭만 차지');
+  ok(/col-episode[^}]*max-width:74px/.test(css), '에피소드 열은 더 좁게');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

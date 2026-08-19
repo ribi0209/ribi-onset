@@ -1,0 +1,26 @@
+globalThis.RIBI_TEST = true;
+import { JSDOM } from 'jsdom';
+import fs from 'node:fs';
+const dom = new JSDOM(fs.readFileSync('../index.html','utf8'), { url:'https://example.test/', pretendToBeVisual:true });
+const w = dom.window;
+w.HTMLElement.prototype.scrollIntoView = function(){};
+for (const k of ['window','document','HTMLElement','Node','Event','CustomEvent','Image','Blob','File','localStorage','getComputedStyle','requestAnimationFrame'])
+  if (w[k]!==undefined && globalThis[k]===undefined) globalThis[k]=w[k];
+globalThis.window=w; globalThis.document=w.document;
+Object.defineProperty(globalThis,'navigator',{ value:{ storage:{ estimate:async()=>({usage:1,quota:100}), persist:async()=>true, persisted:async()=>false } }, configurable:true });
+const FDB = await import('fake-indexeddb');
+globalThis.indexedDB = new FDB.IDBFactory(); globalThis.IDBKeyRange = FDB.IDBKeyRange;
+w.HTMLCanvasElement.prototype.getContext = () => ({ fillRect(){},drawImage(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},getImageData:()=>({data:[]}),putImageData(){} });
+w.HTMLCanvasElement.prototype.toBlob = (cb)=>cb(new w.Blob([new Uint8Array([1])]));
+const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
+const DB=await import('../js/db.js'), UI=await import('../js/ui.js'), V=await import('../js/views.js');
+await DB.open(); const p=await DB.getProject(); p.name='P'; p.type='드라마'; await DB.setProject(p);
+UI.setRefsCache(await DB.getRefs());
+for (const n of ['하늘공원','가락시장','나루터','다산로']) await DB.put('locations',{id:'LOC-'+n,projectId:p.id,mainLocation:n});
+const sc={id:DB.makeSceneId('P'),projectId:p.id,cams:{A:{},B:{},C:{},D:{}}}; await DB.put('scenes',sc);
+const main=w.document.getElementById('main');
+await V.entityDetailView(main,'scenes',sc.id,()=>{}); await wait(500);
+const fields=Array.from(main.querySelectorAll('.field'));
+console.log('필드 라벨들:', fields.map(f=>f.querySelector('label')&&f.querySelector('label').textContent).join(' | '));
+const loc=fields.find(f=>f.querySelector('label')&&f.querySelector('label').textContent==='로케이션');
+console.log('로케 필드 발견:', !!loc, '| 안의 태그:', loc? Array.from(loc.children).map(c=>c.tagName+'.'+c.className).join(',') : '-');

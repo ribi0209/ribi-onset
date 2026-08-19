@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v31 · 2026-08-13';
+export const BUILD = 'v32 · 2026-08-13';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -300,7 +300,8 @@ export const ENTITIES = {
     icon:'◈', store:'locations', idPrefix:'LOC',
     // 다른 화면(씬 목록·HDRI·연결 드롭다운)에 한 줄로 나올 때의 표기.
     // SET ID 까지 붙으면 목록에서 너무 길어진다 — Location 페이지 자체 목록에는 그대로 나온다.
-    titleFields:['mainLocation'], subtitleFields:['subLocation'],
+    // 한 줄 표기는 '그린힐테라스/거실' — 목록 폭을 아끼려고 구분자를 슬래시로 붙인다
+    titleFields:['mainLocation'], subtitleFields:['subLocation'], nameSep:'/',
     thumbField:'thumbnail',
     filters:[
       { k:'setType', ref:'setTypes', label:'세트 타입' },
@@ -509,7 +510,7 @@ export function displayName(entKey, r){
   const cfg = ENTITIES[entKey];
   const head = cfg.titleFields.map(k => r[k]).filter(Boolean).join(' · ');
   const sub  = (cfg.subtitleFields || []).map(k => r[k]).filter(Boolean).join(' · ');
-  return [head, sub].filter(Boolean).join(' — ') || r.id;
+  return [head, sub].filter(Boolean).join(cfg.nameSep || ' — ') || r.id;
 }
 
 /**
@@ -553,17 +554,20 @@ export function camFieldLine(entKey, r, key){
   return pairs.map(([c,v]) => `${c}: ${v}`).join(' · ');
 }
 
-/** 캠별 기록을 한 줄로 — 'A: A027 C002 · B: B027 C001' */
+/**
+ * 캠별 기록을 한 줄로 — 'A027 C002 / B027 C001'
+ * 캠 이름(A:)은 붙이지 않는다. 캠 롤 첫 글자가 이미 어느 캠인지 말해 주고,
+ * 목록에서 이 칸이 넓어지면 가로 스크롤이 생긴다.
+ */
 export function camSummaryLine(entKey, r){
   const cfg = ENTITIES[entKey];
   if (!Array.isArray(cfg.cams) || !r || !r.cams) return '';
   return cfg.cams
     .map(c => {
       const d = r.cams[c] || {};
-      const s = [d.camRoll, d.clip].filter(Boolean).join(' ');
-      return s ? `${c}: ${s}` : null;
+      return [d.camRoll, d.clip].filter(Boolean).join(' ');
     })
-    .filter(Boolean).join(' · ');
+    .filter(Boolean).join(' / ');
 }
 
 /**

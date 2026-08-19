@@ -361,6 +361,20 @@ body.printing #printroot{
 .field.camfield > label::after{ content:' ◐'; color:var(--ok); font-size:9px; }
 .link-add{ max-width:100%; }
 td.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; letter-spacing:-.2px; }
+/* 짧은 열은 내용 폭만 차지하게 해서(width:1%) 남는 공간을 로케이션·노트에 몰아 준다.
+   안 그러면 열이 균등 분배되면서 표가 화면보다 넓어져 가로 스크롤이 생긴다. */
+.dtable th.col-episode, .dtable td.col-episode,
+.dtable th.col-scene,   .dtable td.col-scene,
+.dtable th.col-cams,    .dtable td.col-cams,
+.dtable th.col-vfx,     .dtable td.col-vfx,
+.dtable th.col-vendor,  .dtable td.col-vendor,
+.dtable th.col-intExt,  .dtable td.col-intExt,
+.dtable th.col-tod,     .dtable td.col-tod{
+  width:1%; white-space:nowrap;
+}
+/* 에피소드는 EP01 정도라 더 좁혀도 된다 */
+.dtable th.col-episode, .dtable td.col-episode{ max-width:74px; overflow:hidden; text-overflow:ellipsis; }
+
 /* 노트 칸 — 한 줄만 보이고 넘치면 … 로 끊는다. 전체 내용은 툴팁 / 상세에서 본다 */
 .dtable td.note{
   max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;

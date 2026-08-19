@@ -142,7 +142,7 @@ console.log('== 캠 탭: 값이 캠별로 분리 저장되는가 ==');
 
   const { usedCams, camSummaryLine } = await import('../js/schema.js');
   ok(usedCams('scenes', rec).join('')==='AB', `사용 중인 캠 ${usedCams('scenes', rec).join(',')}`);
-  ok(camSummaryLine('scenes', rec)==='A: A027 · B: B027', `리스트 요약 "${camSummaryLine('scenes', rec)}"`);
+  ok(camSummaryLine('scenes', rec)==='A027 / B027', `리스트 요약 "${camSummaryLine('scenes', rec)}"`);
 
   // 씬 공통 필드는 탭과 무관해야 한다
   const noteTa = Array.from(main.querySelectorAll('.field'))
