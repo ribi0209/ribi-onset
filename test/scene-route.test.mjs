@@ -424,7 +424,9 @@ console.log('== 목록 폭 (가로 스크롤 방지) ==');
   const css = fs.readFileSync('../css/app.css','utf8').replace(/\s+/g,'');
   ok(/col-episode[^{]*\{[^}]*width:1%/.test(css) || /col-episode,[^{]*\{[^}]*width:1%/.test(css)
      || css.includes('width:1%;white-space:nowrap'), '짧은 열은 내용 폭만 차지');
-  ok(/col-episode[^}]*max-width:74px/.test(css), '에피소드 열은 더 좁게');
+  // 머리글이 잘리면 안 된다 — 폭을 고정하지 않고 내용에 맡긴다
+  ok(!/col-episode[^}]*max-width/.test(css), '에피소드 열 폭을 고정하지 않는다 (머리글 잘림 방지)');
+  ok(!/col-episode[^}]*text-overflow:ellipsis/.test(css), '머리글을 … 로 자르지 않는다');
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

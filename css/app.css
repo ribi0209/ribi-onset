@@ -372,8 +372,8 @@ td.mono{ font-family:ui-monospace,Menlo,Consolas,monospace; letter-spacing:-.2px
 .dtable th.col-tod,     .dtable td.col-tod{
   width:1%; white-space:nowrap;
 }
-/* 에피소드는 EP01 정도라 더 좁혀도 된다 */
-.dtable th.col-episode, .dtable td.col-episode{ max-width:74px; overflow:hidden; text-overflow:ellipsis; }
+/* 폭을 고정으로 묶지 않는다. width:1% + nowrap 이면 머리글과 내용 중 넓은 쪽에 맞춰
+   저절로 최소 폭이 잡힌다. 예전에 74px 로 막아 두니 '에피소...' 로 잘렸다. */
 
 /* 노트 칸 — 한 줄만 보이고 넘치면 … 로 끊는다. 전체 내용은 툴팁 / 상세에서 본다 */
 .dtable td.note{
