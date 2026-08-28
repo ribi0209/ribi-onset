@@ -27,6 +27,9 @@ w.HTMLCanvasElement.prototype.getContext = function(){
            set lineCap(v){}, set lineJoin(v){}, set imageSmoothingQuality(v){} };
 };
 w.HTMLCanvasElement.prototype.toBlob = function(cb){ cb(new w.Blob([new Uint8Array([1,2,3])],{type:'image/png'})); };
+// jsdom Blob 은 Node 의 URL.createObjectURL 이 받지 않는다. 여기서 blob URL 자체는 검증 대상이 아니다.
+URL.createObjectURL = () => 'blob:test';
+URL.revokeObjectURL = () => {};
 
 let fail=0; const ok=(c,m)=>{ console.log((c?'  PASS ':'  FAIL ')+m); if(!c) fail++; };
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
@@ -427,6 +430,69 @@ console.log('== 목록 폭 (가로 스크롤 방지) ==');
   // 머리글이 잘리면 안 된다 — 폭을 고정하지 않고 내용에 맡긴다
   ok(!/col-episode[^}]*max-width/.test(css), '에피소드 열 폭을 고정하지 않는다 (머리글 잘림 방지)');
   ok(!/col-episode[^}]*text-overflow:ellipsis/.test(css), '머리글을 … 로 자르지 않는다');
+}
+
+console.log('== 복제해도 원본 S펜이 살아 있는가 ==');
+{
+  // 실제로 났던 문제: 복제본이 원본과 '같은 이미지'를 가리켰다.
+  // 복제본에서 S펜을 다시 그리면 이전 이미지를 지우는데 그게 원본 것이라 원본이 빈칸이 됐다.
+  const main = w.document.getElementById('main');
+  const p = await DB.getProject();
+
+  const src = { id: DB.makeSceneId(p.name), projectId: p.id, scene:'5-1',
+                cams:{A:{},B:{},C:{},D:{}} };
+  src.sketch = await DB.putMedia(new w.Blob([new Uint8Array([1,2,3,4])],{type:'image/png'}),
+                                 { name:'sketch.png', width:1600, height:620 });
+  src.cams.A.thumbnail = await DB.putMedia(new w.Blob([new Uint8Array([9,9])],{type:'image/jpeg'}),
+                                           { name:'a.jpg', width:100, height:80 });
+  await DB.put('scenes', src);
+
+  let routed = null;
+  await V.entityDetailView(main, 'scenes', src.id, (path)=>{ routed = path; });
+  await wait(300);
+  const dupBtn = Array.from(main.querySelectorAll('button')).find(b => b.textContent === '복제');
+  ok(!!dupBtn, '복제 버튼 존재');
+  dupBtn.dispatchEvent(new w.Event('click', { bubbles:true }));
+  await wait(500);
+
+  ok(!!routed && routed.startsWith('scenes/'), `복제 후 이동 (${routed})`);
+  const copyId = routed.split('/')[1];
+  const orig = await DB.get('scenes', src.id);
+  const copy = await DB.get('scenes', copyId);
+
+  ok(!!orig.sketch && !!orig.sketch.mid, '원본 스케치 유지');
+  ok(!!copy.sketch && !!copy.sketch.mid, '복제본에도 스케치가 따라옴');
+  ok(orig.sketch.mid !== copy.sketch.mid,
+     `같은 이미지를 가리키지 않는다 (${orig.sketch.mid} vs ${copy.sketch.mid})`);
+  ok(!!(await DB.getMedia(orig.sketch.mid)), '원본 이미지 실재');
+  ok(!!(await DB.getMedia(copy.sketch.mid)), '복제본 이미지 실재');
+
+  ok(!copy.cams.A.thumbnail, '사진은 복제하지 않는다 (테이크마다 다르다)');
+  ok(!!orig.cams.A.thumbnail, '원본 사진은 그대로');
+
+  // 복제본의 스케치를 지워도 원본은 멀쩡해야 한다 — 이게 실제 증상이었다
+  await DB.delMedia(copy.sketch.mid);
+  ok(!!(await DB.getMedia(orig.sketch.mid)), '복제본을 지워도 원본 스케치는 살아 있다');
+}
+
+console.log('== 이미 공유 상태인 기록 복구 ==');
+{
+  const p = await DB.getProject();
+  const shared = await DB.putMedia(new w.Blob([new Uint8Array([7,7,7])],{type:'image/png'}),
+                                   { name:'s.png', width:10, height:10 });
+  const a = { id: DB.makeSceneId(p.name)+'SH1', projectId:p.id, sketch:{...shared}, cams:{A:{},B:{},C:{},D:{}} };
+  const b = { id: DB.makeSceneId(p.name)+'SH2', projectId:p.id, sketch:{...shared}, cams:{A:{},B:{},C:{},D:{}} };
+  await DB.put('scenes', a); await DB.put('scenes', b);
+
+  const fixed = await DB.dedupeSharedMedia();
+  ok(fixed >= 1, `공유하던 기록 ${fixed}건 분리`);
+  const a2 = await DB.get('scenes', a.id), b2 = await DB.get('scenes', b.id);
+  ok(a2.sketch.mid !== b2.sketch.mid, `더 이상 같은 이미지를 가리키지 않는다 (${a2.sketch.mid} vs ${b2.sketch.mid})`);
+  ok(!!(await DB.getMedia(a2.sketch.mid)) && !!(await DB.getMedia(b2.sketch.mid)), '양쪽 다 이미지 실재');
+
+  // 두 번 돌려도 멀쩡해야 한다
+  const again = await DB.dedupeSharedMedia();
+  ok(again === 0, `공유가 없으면 아무것도 하지 않는다 (${again}건)`);
 }
 
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');

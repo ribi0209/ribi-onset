@@ -428,13 +428,19 @@ export async function entityDetailView(root, entKey, id, go){
       el('button', { class:'btn ghost', text:'복제', onclick: async () => {
         const copy = JSON.parse(JSON.stringify(rec));
         copy.id = entKey === 'scenes' ? DB.makeSceneId(project.name) : DB.makeId(cfg.idPrefix||'REC');
-        // 이미지는 복제하지 않는다 (같은 mid 를 둘이 참조하면 한쪽을 지울 때 다른 쪽이 깨진다)
+        /* 이미지가 붙은 필드는 참조를 그냥 베끼면 안 된다.
+           같은 mid 를 둘이 가리키면 한쪽에서 다시 그리거나 지울 때 다른 쪽이 빈칸이 된다.
+             - 사진(대표/현장) : 테이크마다 다른 것이므로 비운다
+             - 스케치(S펜)     : 다음 씬에도 이어 쓰는 메모라 실제 복사본을 만든다 (PNG 라 작다) */
         for (const g of cfg.groups) for (const f of g.fields){
-          if (f.t !== 'photo' && f.t !== 'photos') continue;
-          if (f.cam && copy.cams){
-            for (const c of (cfg.cams || [])) if (copy.cams[c]) copy.cams[c][f.k] = emptyOf(f);
-          } else {
-            copy[f.k] = emptyOf(f);
+          const clear = (f.t === 'photo' || f.t === 'photos');
+          const dup   = (f.t === 'sketch');
+          if (!clear && !dup) continue;
+          const targets = (f.cam && copy.cams)
+            ? (cfg.cams || []).map(c => copy.cams[c]).filter(Boolean)
+            : [copy];
+          for (const t of targets){
+            t[f.k] = clear ? emptyOf(f) : await DB.copyMedia(t[f.k]);
           }
         }
         delete copy.createdAt; delete copy.updatedAt;

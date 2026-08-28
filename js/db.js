@@ -181,6 +181,61 @@ async function postMigrate(){
   await migrateSceneCams();
   await migrateSceneUnitToCams();
   await repairCamUnitFanout();
+  await dedupeSharedMedia();
+}
+
+/**
+ * 두 레코드가 같은 이미지를 가리키고 있으면 뒤엣것을 복사본으로 떼어 놓는다.
+ *
+ * 복제 기능이 스케치 참조를 그대로 베끼고 있었다(~v34). 그 상태에서 복제본의 S펜을
+ * 다시 그리면 이전 이미지를 지우는데, 그게 원본이 쓰던 이미지라 원본에서 그림이 사라졌다.
+ * 코드는 고쳤지만 이미 복제해 둔 기록은 여전히 공유 상태이므로 여기서 풀어 준다.
+ * 공유가 없으면 아무것도 하지 않는다 (여러 번 돌아도 안전).
+ */
+export async function dedupeSharedMedia(){
+  const seen = new Map();          // mid → 처음 쓴 레코드
+  let fixed = 0;
+
+  const remap = async (v, owner) => {
+    if (!v || typeof v !== 'object') return { v, changed:false };
+    if (Array.isArray(v)){
+      let changed = false; const out = [];
+      for (const x of v){ const r = await remap(x, owner); out.push(r.v); changed ||= r.changed; }
+      return { v: changed ? out : v, changed };
+    }
+    if (v.mid){
+      const prev = seen.get(v.mid);
+      if (prev && prev !== owner){
+        const copy = await copyMedia(v);
+        if (copy){ seen.set(copy.mid, owner); return { v: copy, changed:true }; }
+        return { v, changed:false };
+      }
+      seen.set(v.mid, owner);
+      return { v, changed:false };
+    }
+    let changed = false; const out = {};
+    for (const [k, val] of Object.entries(v)){
+      const r = await remap(val, owner); out[k] = r.v; changed ||= r.changed;
+    }
+    return { v: changed ? out : v, changed };
+  };
+
+  for (const store of RECORD_STORES){
+    for (const rec of await listAll(store)){
+      const owner = store + ':' + rec.id;
+      let dirty = false;
+      for (const [k, val] of Object.entries(rec)){
+        if (k === 'id' || k === 'projectId') continue;
+        const r = await remap(val, owner);
+        if (r.changed){ rec[k] = r.v; dirty = true; }
+      }
+      if (dirty){
+        await wrap(tx([store],'readwrite').objectStore(store).put(rec));
+        fixed++;
+      }
+    }
+  }
+  return fixed;
 }
 
 /**
@@ -644,6 +699,21 @@ export async function putMedia(blob, meta = {}){
   await wrap(tx(['media'],'readwrite').objectStore('media').put(rec));
   return { mid, name:rec.name, width:rec.width, height:rec.height,
            originalBytes:rec.originalBytes, compressedBytes:rec.compressedBytes };
+}
+
+/**
+ * 이미지 참조를 **실제 복사본**으로 만든다.
+ *
+ * 두 레코드가 같은 mid 를 가리키면, 한쪽에서 그림을 다시 그리거나 레코드를 지울 때
+ * 공유하던 이미지가 삭제돼 다른 쪽이 빈칸이 된다. 참조만 베끼면 안 되는 이유다.
+ */
+export async function copyMedia(ref){
+  if (!ref || !ref.mid) return ref || null;
+  const m = await getMedia(ref.mid);
+  if (!m || !m.blob) return null;
+  return putMedia(m.blob, {
+    name: m.name, width: m.width, height: m.height, originalBytes: m.originalBytes,
+  });
 }
 
 export async function getMedia(mid){
