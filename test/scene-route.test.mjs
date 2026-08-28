@@ -170,7 +170,7 @@ console.log('== 목록: 캠 기록 열 / 대표 이미지 A 우선 ==');
   // 썸네일·NO 다음이 에피소드·씬·캠기록 순이어야 한다 (촬영 유닛이 있던 자리)
   ok(ths[2]==='에피소드' && ths[3]==='씬' && ths[4]==='캠 기록',
      `캠 기록이 촬영 유닛 자리에 (${ths.slice(2,6).join(' / ')})`);
-  ok(!ths.includes('INT / EXT') && !ths.includes('시제'), `INT/EXT · 시제 열 제거 (${ths.join('/')})`);
+  ok(!ths.includes('INT/EXT') && !ths.includes('시제'), `INT/EXT · 시제 열 제거 (${ths.join('/')})`);
   // NO · 썸네일 · 에피소드 · 씬 · 캠 기록 · 작업 타입 · 로케이션 · 씬 노트 · 벤더
   ok(ths[5]==='작업 타입', `캠 기록 옆에 작업 타입 (${ths[5]})`);
   ok(ths[6]==='로케이션', `로케이션 (${ths[6]})`);
@@ -509,9 +509,25 @@ console.log('== 포컬 렝스 필드 / 배치 ==');
   const labels = g.fields.filter(x => !x.rowSpan).map(x => x.label);
   ok(labels.slice(0,3).join(',') === '에피소드,씬,촬영 유닛', `1행 (${labels.slice(0,3).join(' · ')})`);
   ok(labels.slice(3,6).join(',') === '캠 롤,클립,포컬 렝스', `2행 (${labels.slice(3,6).join(' · ')})`);
-  ok(labels.slice(6,10).join(',') === '촬영일,촬영시각,INT / EXT,시제', `3행 (${labels.slice(6,10).join(' · ')})`);
+  ok(labels.slice(6,10).join(',') === '촬영일,촬영시각,INT/EXT,시제', `3행 (${labels.slice(6,10).join(' · ')})`);
   ok(labels.slice(10,14).join(',') === '로케이션,에셋,작업 타입,벤더', `4행 (${labels.slice(10,14).join(' · ')})`);
-  ok(g.fields.find(x => x.k === 'thumbnail').rowSpan === 2, '썸네일은 2행 관통');
+
+  // 8열 격자라 반 칸(1/8)을 쓸 수 있다 — INT/EXT·시제만 절반 폭
+  ok(g.cols === 8, `8열 격자 (${g.cols})`);
+  const span = (k) => g.fields.find(x => x.k === k).span;
+  ok(span('intExt') === 1 && span('tod') === 1, 'INT/EXT·시제는 반 칸');
+  ok(span('shootDate') === 2 && span('scene') === 2, '나머지는 한 칸(2/8)');
+  const th = g.fields.find(x => x.k === 'thumbnail');
+  ok(th.rowSpan === 3 && th.span === 2, '썸네일이 1~3행을 관통 (촬영일 줄까지 옆으로 올라옴)');
+
+  // 각 행이 정확히 8칸을 채우는지 — 어긋나면 격자가 밀린다
+  let used = th.span, rows = [];
+  for (const x of g.fields){
+    if (x.rowSpan) continue;
+    used += x.span;
+    if (used >= 8){ rows.push(used); used = rows.length < 3 ? th.span : 0; }
+  }
+  ok(rows.length === 4 && rows.every(n => n === 8), `4개 행이 각각 8칸 (${rows.join(',')})`);
 
   const main = w.document.getElementById('main');
   const scene = (await DB.list('scenes'))[0];

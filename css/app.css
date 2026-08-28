@@ -153,6 +153,8 @@ select.inp.cell{ padding-right:22px; }
 .field{ display:flex; flex-direction:column; gap:4px; min-width:0; }
 .field.full{ grid-column:1 / -1; }
 .field > label{ font-size:12px; color:var(--dim); font-weight:600; }
+/* 반 칸짜리(INT/EXT·시제) 라벨이 두 줄로 넘어가면 옆 칸과 높이가 어긋난다 */
+.field > label{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* ---------- 사진 ---------- */
 .photo-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px; }
