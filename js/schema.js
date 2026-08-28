@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v35 · 2026-08-14';
+export const BUILD = 'v36 · 2026-08-14';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -217,30 +217,35 @@ export const ENTITIES = {
     csvCols:['id','episode','scene','unit','shootDate','shootTime','intExt','tod',
              'locationId','vendor','shotNote','extraNote','createdAt','updatedAt'],
     groups:[
-      /* 4열 고정 — 썸네일이 왼쪽에서 3행을 관통한다
-         1행: 에피소드 · 씬 · 촬영유닛(캠별)  2행: 캠 롤 · 클립 · 로케이션
-         3행: INT/EXT · 시제 · 벤더         4행: 촬영일 · 촬영시각 · 에셋 · 작업 타입 */
+      /* 4열 고정 — 썸네일이 왼쪽에서 2행을 관통한다
+         1행: 에피소드 · 씬 · 촬영유닛
+         2행: 캠 롤 · 클립 · 포컬 렝스        (셋 다 모니터에서 읽어 오는 값)
+         3행: 촬영일 · 촬영시각 · INT/EXT · 시제
+         4행: 로케이션 · 에셋 · 작업 타입 · 벤더 */
       { title:'기본정보', cols:4, fields:[
-        // ocr:true → 사진 위의 ⌁ 버튼으로 모니터 오버레이를 읽어 캠 롤·클립을 채운다
-        { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:3, cam:true, ocr:true },
+        // ocr:true → 사진 위의 ⌁ 버튼으로 모니터 오버레이를 읽어 캠 롤·클립·포컬 렝스를 채운다
+        { k:'thumbnail', label:'모니터 / 대표 이미지', t:'photo', preset:'plate', span:1, rowSpan:2, cam:true, ocr:true },
         { k:'episode', label:'에피소드', t:'combo', ref:'episodes', span:1, when:(p)=>p.type === '드라마' },
-        // 씬 번호는 프로젝트마다 수백 개가 되어 드롭다운으로는 못 찾는다 → 직접 입력
         { k:'scene',   label:'씬',       t:'text', span:1, hint:'예) 12-3' },
         // soft:true — 값이 있어도 "이 캠으로 찍었다"의 근거가 되지 않는다.
         // 유닛은 직전 씬에서 자동 상속되므로, 이걸로 세면 찍지도 않은 캠이 물량에 잡힌다.
         { k:'unit',    label:'촬영 유닛', t:'combo', ref:'units', span:1, cam:true, soft:true },
-        { k:'camRoll', label:'캠 롤', t:'text', span:1, cam:true },
-        { k:'clip',    label:'클립',  t:'text', span:1, cam:true },
-        { k:'locationId', label:'로케이션', t:'recordRef', to:'locations', span:1 },
-        { k:'intExt', label:'INT / EXT', t:'select', ref:'intExt', span:1 },
-        { k:'tod',    label:'시제',      t:'select', ref:'tod', span:1 },
-        { k:'vendor', label:'벤더',      t:'combo',  ref:'vendors', span:1 },
-        { k:'shootDate', label:'촬영일',  t:'date', span:1 },
+
+        { k:'camRoll',      label:'캠 롤',     t:'text',  span:1, cam:true },
+        { k:'clip',         label:'클립',      t:'text',  span:1, cam:true },
+        { k:'focalLength',  label:'포컬 렝스', t:'combo', ref:'focalLengths', span:1, cam:true },
+
+        { k:'shootDate', label:'촬영일',   t:'date', span:1 },
         { k:'shootTime', label:'촬영시각', t:'time', span:1 },
-        { k:'linkedAssetIds', label:'에셋', t:'link', to:'assets', span:1 },
+        { k:'intExt',    label:'INT / EXT', t:'select', ref:'intExt', span:1 },
+        { k:'tod',       label:'시제',      t:'select', ref:'tod', span:1 },
+
+        { k:'locationId',     label:'로케이션', t:'recordRef', to:'locations', span:1 },
+        { k:'linkedAssetIds', label:'에셋',    t:'link', to:'assets', span:1 },
         // VFX 물량의 통계 축. 캠(앵글)마다 다르므로 캠별 값이다 —
         // A캠 와이드에는 set extension 이 필요해도 B캠 클로즈업엔 없을 수 있다.
-        { k:'vfxType', label:'작업 타입', t:'select', ref:'vfxTypes', span:1, cam:true },
+        { k:'vfxType',        label:'작업 타입', t:'select', ref:'vfxTypes', span:1, cam:true },
+        { k:'vendor',         label:'벤더',     t:'combo',  ref:'vendors', span:1 },
       ]},
       { title:'내용', fields:[
         { k:'shotNote',  label:'씬 노트', t:'textarea', full:true },

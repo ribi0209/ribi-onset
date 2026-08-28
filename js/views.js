@@ -516,7 +516,7 @@ function camSummary(d){
 }
 
 /**
- * 대표 이미지에 들어간 모니터 사진에서 캠 롤·클립을 읽어 그 캠에 채운다.
+ * 대표 이미지에 들어간 모니터 사진에서 캠 롤·클립·포컬 렝스를 읽어 그 캠에 채운다.
  * 촬영은 태블릿 기본 카메라로 하고(갤러리에 남는다), 앱은 그 사진을 불러와 자른 뒤 판독만 한다.
  * 판독값은 확인창을 거친다 — 클립 번호가 조용히 틀리는 게 제일 위험하다.
  *
@@ -532,9 +532,10 @@ async function readMonitorInto(camRec, ref){
     if (!media || !media.blob) throw new Error('사진을 찾을 수 없습니다');
     const r = await OCR.readMonitor(media.blob, (m, pc) => p.set(m, pc));
     text = r.text; confidence = r.confidence;
-    const all = OCR.parseMonitor(text, {});
+    const all = OCR.parseMonitor(text, { focalLengths: refList('focalLengths') });
     if (all.camRoll) snapped.camRoll = all.camRoll;
     if (all.clip)    snapped.clip    = all.clip;
+    if (all.lens)    snapped.lens    = all.lens;   // 오버레이의 FCL 75.0mm
   } catch (e){
     p.done();
     toast('판독 실패: ' + errText(e), 'err', 4500);
@@ -546,9 +547,11 @@ async function readMonitorInto(camRec, ref){
   if (!picked) return false;
 
   let n = 0;
-  if (picked.camRoll){ camRec.camRoll = picked.camRoll; n++; }
-  if (picked.clip){    camRec.clip    = picked.clip;    n++; }
-  toast(n ? `${[camRec.camRoll, camRec.clip].filter(Boolean).join(' ')} 입력됨` : '적용된 항목 없음',
+  if (picked.camRoll){ camRec.camRoll     = picked.camRoll; n++; }
+  if (picked.clip){    camRec.clip        = picked.clip;    n++; }
+  if (picked.lens){    camRec.focalLength = picked.lens;    n++; }
+  toast(n ? `${[camRec.camRoll, camRec.clip, camRec.focalLength].filter(Boolean).join(' · ')} 입력됨`
+          : '적용된 항목 없음',
         n ? 'ok' : 'warn');
   return n > 0;
 }

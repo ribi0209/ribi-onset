@@ -495,5 +495,54 @@ console.log('== 이미 공유 상태인 기록 복구 ==');
   ok(again === 0, `공유가 없으면 아무것도 하지 않는다 (${again}건)`);
 }
 
+console.log('== 포컬 렝스 필드 / 배치 ==');
+{
+  const { fieldMap, ENTITIES } = await import('../js/schema.js');
+  const f = fieldMap('scenes').focalLength;
+  ok(!!f, '포컬 렝스 필드 존재');
+  ok(f.cam === true, '캠별 값 (A캠 75mm / B캠 32mm 가 따로)');
+  ok(f.t === 'combo' && f.ref === 'focalLengths', '초점거리 목록에서 고르되 직접 입력도 가능');
+  ok(!f.soft, '포컬 렝스가 있으면 그 캠으로 찍은 것으로 센다');
+
+  // 요청한 4행 배치대로인지 (썸네일은 2행 관통)
+  const g = ENTITIES.scenes.groups[0];
+  const labels = g.fields.filter(x => !x.rowSpan).map(x => x.label);
+  ok(labels.slice(0,3).join(',') === '에피소드,씬,촬영 유닛', `1행 (${labels.slice(0,3).join(' · ')})`);
+  ok(labels.slice(3,6).join(',') === '캠 롤,클립,포컬 렝스', `2행 (${labels.slice(3,6).join(' · ')})`);
+  ok(labels.slice(6,10).join(',') === '촬영일,촬영시각,INT / EXT,시제', `3행 (${labels.slice(6,10).join(' · ')})`);
+  ok(labels.slice(10,14).join(',') === '로케이션,에셋,작업 타입,벤더', `4행 (${labels.slice(10,14).join(' · ')})`);
+  ok(g.fields.find(x => x.k === 'thumbnail').rowSpan === 2, '썸네일은 2행 관통');
+
+  const main = w.document.getElementById('main');
+  const scene = (await DB.list('scenes'))[0];
+  await V.entityDetailView(main, 'scenes', scene.id, ()=>{});
+  await wait(300);
+  const fl = Array.from(main.querySelectorAll('.field'))
+    .find(x => x.querySelector('label') && x.querySelector('label').textContent.startsWith('포컬 렝스'));
+  ok(!!fl, '화면에 포컬 렝스 칸이 보인다');
+  ok(!!fl.querySelector('.combo select'), '드롭다운으로 렌더');
+  ok(fl.classList.contains('camfield'), '캠별 필드 표시');
+}
+
+console.log('== 모니터에서 포컬 렝스 판독 ==');
+{
+  const { parseMonitor, OCR_LABELS } = await import('../js/ocr.js');
+  const refs = { focalLengths:['18mm','32mm','35mm','50mm','75mm','100mm'] };
+  const B = 'FPS 23.976 SHUTTER 180.0 IRIS - EI 800 ND - WB 4300 K +0.0 CC B\n'
+          + 'FCL 75.0mm BAT 14.7V B027 C001 REC CARD 0:27 h TC 12:01:21:03';
+  const r = parseMonitor(B, refs);
+  ok(r.lens === '75mm', `FCL 75.0mm → ${r.lens}`);
+  ok(r.camRoll === 'B027' && r.clip === 'C001', '캠 롤·클립도 그대로');
+  ok(OCR_LABELS.lens === '포컬 렝스', '확인창 라벨이 화면 필드명과 같다');
+
+  const noLens = parseMonitor('FCL - BAT 14.8V A027 C002 REC', refs);
+  ok(!noLens.lens, "FCL '-' 면 값을 만들어내지 않는다");
+
+  // 판독 → 캠에 반영되는 키가 맞는지 (views 가 lens → focalLength 로 넣는다)
+  const src = fs.readFileSync('../js/views.js','utf8');
+  ok(/picked\.lens.*camRec\.focalLength|camRec\.focalLength\s*=\s*picked\.lens/.test(src),
+     '판독한 렌즈값이 포컬 렝스 칸으로 들어간다');
+}
+
 console.log(fail?`\n### 실패 ${fail}건`:'\n### 전체 통과');
 process.exit(fail?1:0);

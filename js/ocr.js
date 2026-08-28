@@ -179,7 +179,7 @@ export function parseMonitor(raw, refs = {}){
 /** 화면에 보여줄 라벨 */
 export const OCR_LABELS = {
   camRoll:'캠 롤', clip:'클립', tc:'TC', fps:'FPS', shutter:'셔터',
-  iris:'IRIS', ei:'EI', nd:'ND', wb:'WB', cc:'CC', lens:'렌즈',
+  iris:'IRIS', ei:'EI', nd:'ND', wb:'WB', cc:'CC', lens:'포컬 렝스',
 };
 
 /** 테이크 레코드에 실제로 넣을 키만 추림 (cc 는 노트로 간다) */
