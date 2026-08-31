@@ -6,7 +6,8 @@
  * ===================================================================== */
 
 import * as DB from './db.js';
-import { ENTITIES, labelOf, displayName, thumbOf, usedCams } from './schema.js';
+import { ENTITIES, labelOf, displayName, thumbOf, usedCams,
+         refIndex, subIds, subOf, subName } from './schema.js';
 import { el, toast, progress, nowDate } from './ui.js';
 
 /* ---------------- CSV ---------------- */
@@ -30,16 +31,23 @@ export async function exportCSV(entKey, rows){
   if (entKey === 'scenes') return exportSceneCutCSV(rows, p);
 
   const cols = cfg.csvCols;
-  // recordRef 는 id 대신 이름으로 내보낸다
+  // recordRef 는 id 대신 이름으로 내보낸다 (소장소가 있으면 '대장소/소장소')
   const refMaps = {};
   for (const g of cfg.groups) for (const f of g.fields){
-    if (f.t === 'recordRef' && cols.includes(f.k)){
-      refMaps[f.k] = Object.fromEntries((await DB.list(f.to)).map(r => [r.id, displayName(f.to, r)]));
-    }
+    if (f.t === 'recordRef' && cols.includes(f.k)) refMaps[f.k] = refIndex(f.to, await DB.list(f.to)).map;
   }
   const lines = [cols.map(c => csvCell(labelOf(entKey, c))).join(',')];
-  for (const r of rows)
-    lines.push(cols.map(c => csvCell(refMaps[c] ? (refMaps[c][r[c]] || '') : r[c])).join(','));
+  const cellOf = (r, sid, c) => {
+    if (refMaps[c]) return refMaps[c][r[c]] || '';
+    if (sid) { const d = subOf(entKey, r, sid) || {}; if (c in d) return d[c]; }
+    return r[c];
+  };
+  for (const r of rows){
+    // 소장소가 있는 엔티티는 한 줄 = 한 소장소
+    const sids = cfg.subs ? subIds(entKey, r) : [];
+    if (!sids.length){ lines.push(cols.map(c => csvCell(cellOf(r, '', c))).join(',')); continue; }
+    for (const sid of sids) lines.push(cols.map(c => csvCell(cellOf(r, sid, c))).join(','));
+  }
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type:'text/csv;charset=utf-8' });
   download(blob, `${DB.slugOf(p.name)}_${cfg.label}_${nowDate()}.csv`);
   toast(`CSV ${rows.length}행 내보냄`);
@@ -47,7 +55,7 @@ export async function exportCSV(entKey, rows){
 
 async function exportSceneCutCSV(scenes, p){
   // 씬 CSV 는 캠(A~D) 단위로 펼쳐 내보낸다 — 한 줄 = 한 카메라의 기록
-  const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
+  const locName = refIndex('locations', await DB.list('locations')).map;
 
   const head = ['씬 ID','에피소드','씬','촬영일','촬영시각','INT/EXT','시제','로케이션','벤더',
                 '캠','촬영 유닛','작업 타입','캠 롤','클립','포컬 렝스','사진 수','씬 노트','메모'];
@@ -142,7 +150,7 @@ export async function exportBreakdown(scenes){
   const p = await DB.getProject();
   const pr = progress(); pr.set('브레이크다운 생성 중', 10);
 
-  const locName = Object.fromEntries((await DB.list('locations')).map(l => [l.id, displayName('locations', l)]));
+  const locName = refIndex('locations', await DB.list('locations')).map;
   const assets  = Object.fromEntries((await DB.list('assets')).map(a => [a.id, displayName('assets', a)]));
 
   const sorted = scenes.slice().sort((a,b) =>

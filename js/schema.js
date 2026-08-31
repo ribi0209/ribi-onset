@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v37 · 2026-08-28';
+export const BUILD = 'v38 · 2026-08-31';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -303,12 +303,15 @@ export const ENTITIES = {
 
   /* ============ LOCATION ============ */
   locations: {
-    label:'Location', labelKo:'로케이션', title:'로케이션 정보', desc:'대장소·소장소와 세트 타입, 스캔·HDRI 진행상태, 현장 레퍼런스를 관리합니다.',
+    label:'Location', labelKo:'로케이션', title:'로케이션 정보',
+    desc:'대장소 하나 아래에 소장소를 탭으로 둡니다. 주소·세트 타입은 대장소가 공유하고, 나머지는 소장소마다 따로 기록합니다.',
     icon:'◈', store:'locations', idPrefix:'LOC',
-    // 다른 화면(씬 목록·HDRI·연결 드롭다운)에 한 줄로 나올 때의 표기.
-    // SET ID 까지 붙으면 목록에서 너무 길어진다 — Location 페이지 자체 목록에는 그대로 나온다.
-    // 한 줄 표기는 '그린힐테라스/거실' — 목록 폭을 아끼려고 구분자를 슬래시로 붙인다
-    titleFields:['mainLocation'], subtitleFields:['subLocation'], nameSep:'/',
+    /* 소장소 탭 — 씬의 A~D 캠과 같은 구조지만 개수가 정해져 있지 않다.
+       subOrder 가 탭 순서이고, subs[sid] 가 그 소장소의 값이다.
+       sub:true 필드는 rec.subs[sid][k] 에, 나머지는 rec[k] 에 저장된다. */
+    subs:{ key:'subs', order:'subOrder', labelKo:'소장소', nameField:'subLocation' },
+    // 한 줄 표기는 대장소만. 씬에서 고를 때는 '그린힐테라스/거실' 처럼 소장소까지 붙는다(refIndex).
+    titleFields:['mainLocation'], subtitleFields:[], nameSep:'/',
     thumbField:'thumbnail',
     filters:[
       { k:'setType', ref:'setTypes', label:'세트 타입' },
@@ -316,35 +319,35 @@ export const ENTITIES = {
       { k:'scan3d',  ref:'scanOptions', label:'3D 스캔' },
       { k:'hdri',    ref:'hdriOptions', label:'HDRI' },
     ],
-    listCols:['mainLocation','subLocation','setId','setType','intExt','description'],
-    csvCols:['id','mainLocation','subLocation','setId','setType','intExt',
-             'scan3d','hdri','path','description','elements3d','usedCuts','createdAt','updatedAt'],
+    listCols:['mainLocation','__subs','setType','intExt','path'],
+    csvCols:['id','mainLocation','setType','path','subLocation','setId','intExt',
+             'scan3d','hdri','description','elements3d','usedCuts','createdAt','updatedAt'],
     groups:[
-      /* 4열 고정 — 입력칸 폭을 모두 같게 맞춘다
-         1행: 대장소 · 소장소 · SET ID   2행: 세트 타입 · INT/EXT   3행: 주소
-         썸네일은 왼쪽에서 3행을 관통 */
-      { title:'기본정보', cols:4, fields:[
-        { k:'thumbnail', label:'대표 이미지', t:'photo', preset:'thumb', span:1, rowSpan:3 },
-        { k:'mainLocation', label:'대장소', t:'combo', ref:'locations', span:1 },
-        { k:'subLocation',  label:'소장소', t:'text', span:1 },
-        { k:'setId',        label:'SET ID', t:'text', span:1 },
-        { k:'setType', label:'세트 타입', t:'select', ref:'setTypes', span:1 },
-        { k:'intExt',  label:'INT / EXT', t:'select', ref:'intExt', span:1 },
-        { k:'path',    label:'주소', t:'text', span:3 },
+      /* 8열 격자. 썸네일이 왼쪽에서 2행을 관통한다.
+         1행: 대장소 · 세트 타입 · 주소      (대장소가 공유)
+         2행: 소장소 · SET ID · INT/EXT      (소장소마다 따로) */
+      { title:'기본정보', cols:8, fields:[
+        { k:'thumbnail',    label:'대표 이미지', t:'photo', preset:'thumb', span:2, rowSpan:2, sub:true },
+        { k:'mainLocation', label:'대장소',   t:'combo',  ref:'locations', span:2 },
+        { k:'setType',      label:'세트 타입', t:'select', ref:'setTypes',  span:2 },
+        { k:'path',         label:'주소',     t:'text',   span:2 },
+        { k:'subLocation',  label:'소장소',   t:'text',   span:2, sub:true },
+        { k:'setId',        label:'SET ID',   t:'text',   span:2, sub:true },
+        { k:'intExt',       label:'INT/EXT',  t:'select', ref:'intExt', span:2, sub:true },
       ]},
       { title:'데이터 취득', fields:[
-        { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions' },
-        { k:'hdri',    label:'HDRI',    t:'select', ref:'hdriOptions' },
+        { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions', sub:true },
+        { k:'hdri',    label:'HDRI',    t:'select', ref:'hdriOptions', sub:true },
       ]},
       { title:'내용', fields:[
-        { k:'description', label:'설명', t:'textarea', full:true },
-        { k:'elements3d',  label:'3D 요소', t:'textarea', full:true },
-        { k:'usedCuts',    label:'사용 컷', t:'text', full:true },
-        { k:'sketch',      label:'현장 스케치 (S펜)', t:'sketch', full:true },
+        { k:'description', label:'설명',   t:'textarea', full:true, sub:true },
+        { k:'elements3d',  label:'3D 요소', t:'textarea', full:true, sub:true },
+        { k:'usedCuts',    label:'사용 컷', t:'text',     full:true, sub:true },
+        { k:'sketch',      label:'현장 스케치 (S펜)', t:'sketch', full:true, sub:true },
       ]},
       { title:'사진', fields:[
-        { k:'conceptPhotos',  label:'컨셉',  t:'photos', n:7, full:true },
-        { k:'locationPhotos', label:'현장',  t:'photos', n:7, full:true },
+        { k:'conceptPhotos',  label:'컨셉', t:'photos', n:7, full:true, sub:true },
+        { k:'locationPhotos', label:'현장', t:'photos', n:7, full:true, sub:true },
       ]},
     ],
   },
@@ -527,9 +530,133 @@ export function displayName(entKey, r){
  * 즉 A 에 이미지가 있으면 무조건 A 가 대표가 된다.
  * (구 데이터는 레코드 최상단에 있으므로 그것도 함께 본다)
  */
+/* ---------- 소장소(서브 레코드) ----------
+ * 씬의 A~D 캠은 개수가 고정이라 cfg.cams 배열로 충분했지만,
+ * 소장소는 현장마다 개수가 다르다. 그래서 순서 배열(subOrder)과
+ * 값 객체(subs) 두 개로 들고 다닌다.
+ *   rec = { mainLocation:'그린힐테라스', subOrder:['S1','S2'],
+ *           subs:{ S1:{subLocation:'거실', …}, S2:{subLocation:'안방', …} } }
+ * 씬은 'LOC-001::S1' 처럼 소장소까지 가리킨다.
+ */
+export const SUB_SEP = '::';
+
+/** 이 엔티티가 소장소 탭을 쓰는가 */
+export function hasSubs(entKey){ return !!ENTITIES[entKey].subs; }
+
+/** 탭 순서대로의 서브 id 목록. subOrder 가 없거나 어긋나면 subs 키로 보정한다. */
+export function subIds(entKey, r){
+  const cfg = ENTITIES[entKey];
+  if (!cfg.subs || !r) return [];
+  const subs  = r[cfg.subs.key] || {};
+  const order = Array.isArray(r[cfg.subs.order]) ? r[cfg.subs.order] : [];
+  const out = order.filter(sid => subs[sid]);
+  for (const sid of Object.keys(subs)) if (!out.includes(sid)) out.push(sid);
+  return out;
+}
+
+/** 다음 서브 id — 기존과 겹치지 않는 S1, S2 … */
+export function nextSubId(entKey, r){
+  const used = new Set(subIds(entKey, r));
+  let n = 1;
+  while (used.has('S' + n)) n++;
+  return 'S' + n;
+}
+
+/** 소장소 하나의 값 객체 */
+export function subOf(entKey, r, sid){
+  const cfg = ENTITIES[entKey];
+  return (cfg.subs && r && r[cfg.subs.key] && r[cfg.subs.key][sid]) || null;
+}
+
+/** 탭에 쓸 이름 — 비어 있으면 '소장소 2' 처럼 순번으로 */
+export function subName(entKey, r, sid){
+  const cfg = ENTITIES[entKey];
+  const d = subOf(entKey, r, sid);
+  const v = d && String(d[cfg.subs.nameField] || '').trim();
+  if (v) return v;
+  const i = subIds(entKey, r).indexOf(sid);
+  return `${cfg.subs.labelKo} ${i < 0 ? '' : i + 1}`.trim();
+}
+
+/** 다른 화면에서 고를 때의 한 줄 표기 — '그린힐테라스/거실'.
+ *  소장소 이름이 비어 있으면 '/소장소 1' 같은 임시 이름을 붙이지 않고 대장소만 보여준다. */
+export function subDisplayName(entKey, r, sid){
+  const cfg = ENTITIES[entKey];
+  const head = displayName(entKey, r);
+  const d = subOf(entKey, r, sid);
+  const name = d ? String(d[cfg.subs.nameField] || '').trim() : '';
+  return [head, name].filter(Boolean).join(cfg.nameSep || ' — ');
+}
+
+/** 'LOC-001::S1' 을 쪼갠다. 구분자가 없으면 예전 값이므로 sid 는 빈 문자열. */
+export function splitRef(v){
+  const s = String(v || '');
+  const i = s.indexOf(SUB_SEP);
+  return i < 0 ? { id:s, sid:'' } : { id:s.slice(0,i), sid:s.slice(i + SUB_SEP.length) };
+}
+
+/**
+ * recordRef 드롭다운/표시에 쓸 목록.
+ * 소장소가 있는 엔티티는 소장소 단위로 펼쳐서 각각 하나의 선택지가 된다.
+ * 반환하는 map 에는 구분자 없는 예전 값(레코드 id)도 넣어 둔다 —
+ * 마이그레이션이 아직 안 돈 기기에서도 이름이 '—' 로 비지 않게.
+ */
+export function refIndex(entKey, rows){
+  const cfg  = ENTITIES[entKey];
+  const opts = [];
+  const map  = {};
+  for (const r of rows || []){
+    if (cfg.subs){
+      const ids = subIds(entKey, r);
+      map[r.id] = ids.length ? subDisplayName(entKey, r, ids[0]) : displayName(entKey, r);
+      for (const sid of ids){
+        const value = r.id + SUB_SEP + sid;
+        const label = subDisplayName(entKey, r, sid);
+        opts.push({ value, label });
+        map[value] = label;
+      }
+      if (!ids.length) opts.push({ value:r.id, label: map[r.id] });
+    } else {
+      const label = displayName(entKey, r);
+      opts.push({ value:r.id, label });
+      map[r.id] = label;
+    }
+  }
+  opts.sort((a,b) => a.label.localeCompare(b.label, 'ko', { numeric:true }));
+  return { opts, map, label:(v) => map[v] || '' };
+}
+
+/** 소장소별 값 모으기 (필터 판정용) */
+export function subValues(entKey, r, key){
+  return subIds(entKey, r).map(sid => (subOf(entKey, r, sid) || {})[key]).filter(Boolean);
+}
+
+/** 목록 한 칸에 넣을 소장소 요약 — 값이 하나면 그대로, 여러 개면 '거실: INT · 마당: EXT' */
+export function subFieldLine(entKey, r, key){
+  const cfg = ENTITIES[entKey];
+  if (!cfg.subs) return '';
+  const ids   = subIds(entKey, r);
+  const pairs = ids.map(sid => [sid, (subOf(entKey, r, sid) || {})[key]]).filter(([,v]) => v);
+  if (!pairs.length) return '';
+  const vals = Array.from(new Set(pairs.map(([,v]) => v)));
+  if (vals.length === 1) return vals[0];
+  return pairs.map(([sid,v]) => `${subName(entKey, r, sid)}: ${v}`).join(' · ');
+}
+
+/** 목록의 소장소 열 — '거실 · 안방 · 마당' */
+export function subSummaryLine(entKey, r){
+  return subIds(entKey, r).map(sid => subName(entKey, r, sid)).join(' · ');
+}
+
 export function thumbOf(entKey, r){
   const cfg = ENTITIES[entKey];
   if (!r) return null;
+  if (cfg.subs){
+    for (const sid of subIds(entKey, r)){
+      const v = (subOf(entKey, r, sid) || {})[cfg.thumbField];
+      if (v && v.mid) return v;
+    }
+  }
   if (Array.isArray(cfg.cams) && r.cams){
     for (const c of cfg.cams){
       const v = (r.cams[c] || {})[cfg.thumbField];
@@ -655,7 +782,7 @@ export function labelOf(ent, key){
   const f = fieldMap(ent)[key];
   if (f) return f.label;
   return { id:'ID', sceneId:'씬 ID', episode:'에피소드', scene:'씬',
-           __cams:'캠 기록', __vfx:'작업 타입',
+           __cams:'캠 기록', __vfx:'작업 타입', __subs:'소장소',
            takeCount:'테이크 수', okTakes:'OK 테이크',
            createdAt:'생성', updatedAt:'수정' }[key] || key;
 }

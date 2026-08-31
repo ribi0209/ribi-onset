@@ -359,6 +359,11 @@ body.printing #printroot{
 .cam-tab.on{ background:var(--ok); border-color:var(--ok); color:#08130c; }
 .cam-tab.on .cam-sub{ opacity:.75; }
 .cam-body{ min-height:120px; }
+/* 소장소 탭은 이름 길이가 제각각이라 폭을 늘려 준다 (캠은 A~D 한 글자) */
+.cam-tab b{ max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* + 소장소 추가 */
+.cam-tab.add{ min-width:78px; border-style:dashed; }
+.cam-tab.add b{ font-size:20px; line-height:1; }
 /* 캠에 따라 값이 바뀌는 입력칸은 살짝 구분해 준다 */
 .field.camfield > label::after{ content:' ◐'; color:var(--ok); font-size:9px; }
 .link-add{ max-width:100%; }

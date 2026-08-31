@@ -238,18 +238,26 @@ console.log('== 로케이션 개편 ==');
   const { ENTITIES } = await import('../js/schema.js');
   const L = ENTITIES.locations;
   const g0 = L.groups[0].fields.map(f=>f.k);
-  ok(JSON.stringify(g0)===JSON.stringify(['thumbnail','mainLocation','subLocation','setId','setType','intExt','path']),
+  ok(JSON.stringify(g0)===JSON.stringify(['thumbnail','mainLocation','setType','path','subLocation','setId','intExt']),
      `기본정보 순서 ${g0.join(' → ')}`);
-  ok(L.groups[0].cols===4, `기본정보 고정 ${L.groups[0].cols}열`);
+  ok(L.groups[0].cols===8, `기본정보 고정 ${L.groups[0].cols}열`);
   const sp = Object.fromEntries(L.groups[0].fields.map(f=>[f.k, f.span]));
-  // 6열 기준: 1행 썸(1)+대장소(2)+소장소(2)+SETID(1)=6 / 2행 세트타입(2)+INT-EXT(2) / 3행 주소(5)
-  ok(sp.thumbnail===1 && sp.mainLocation===1 && sp.subLocation===1 && sp.setId===1,
-     `1행 = 썸네일+대장소+소장소+SETID 각 1칸 (합 ${sp.thumbnail+sp.mainLocation+sp.subLocation+sp.setId} = 4)`);
-  ok(sp.setType===1 && sp.intExt===1, '2행: 세트 타입 · INT/EXT 도 각 1칸');
-  const widths = new Set([sp.mainLocation, sp.subLocation, sp.setId, sp.setType, sp.intExt]);
-  ok(widths.size===1, `입력칸 5개 폭이 모두 동일 (${[...widths]}칸)`);
-  ok(sp.path===3, `3행: 주소 ${sp.path}칸 (썸네일 옆 전체)`);
-  ok(L.groups[0].fields.find(f=>f.k==='thumbnail').rowSpan===3, '썸네일이 3행 관통');
+  // 8열: 1행 썸(2)+대장소(2)+세트타입(2)+주소(2) / 2행 썸(관통)+소장소(2)+SETID(2)+INT-EXT(2)
+  ok(sp.thumbnail+sp.mainLocation+sp.setType+sp.path===8,
+     `1행 합 8칸 (${sp.thumbnail}+${sp.mainLocation}+${sp.setType}+${sp.path})`);
+  ok(sp.thumbnail+sp.subLocation+sp.setId+sp.intExt===8,
+     `2행 합 8칸 (${sp.thumbnail}+${sp.subLocation}+${sp.setId}+${sp.intExt})`);
+  const widths = new Set([sp.mainLocation, sp.subLocation, sp.setId, sp.setType, sp.intExt, sp.path]);
+  ok(widths.size===1, `입력칸 6개 폭이 모두 동일 (${[...widths]}칸)`);
+  ok(L.groups[0].fields.find(f=>f.k==='thumbnail').rowSpan===2, '썸네일이 2행 관통');
+
+  // 소장소 탭 — 대장소가 공유하는 건 대장소·세트 타입·주소뿐
+  ok(!!L.subs && L.subs.key==='subs' && L.subs.order==='subOrder', '소장소 탭 선언');
+  const shared = L.groups.flatMap(g=>g.fields).filter(f=>!f.sub).map(f=>f.k);
+  ok(JSON.stringify(shared)===JSON.stringify(['mainLocation','setType','path']),
+     `대장소 공유 필드 = ${shared.join(' · ')}`);
+  ok(L.groups.flatMap(g=>g.fields).filter(f=>f.sub).length===12,
+     '나머지는 전부 소장소별');
   ok(!L.groups.some(g=>g.fields.some(f=>f.k==='shootLocation')), '촬영장소 필드 제거');
   const sk = L.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');
   ok(!!sk, `S펜 스케치 필드 추가 (${sk && sk.label})`);
@@ -264,12 +272,22 @@ console.log('== 로케이션 개편 ==');
   await V.entityDetailView(main,'locations',loc.id,()=>{}); await wait(350);
   const g = main.querySelector('.grid.fixed');
   ok(!!g, '고정 격자 렌더');
-  ok(g.getAttribute('style').includes('--cols:4'), `열 수 지정 (${g.getAttribute('style')})`);
-  const st = k => main.querySelector('.grid.fixed').children;
+  ok(g.getAttribute('style').includes('--cols:8'), `열 수 지정 (${g.getAttribute('style')})`);
   const cells = Array.from(g.children);
-  ok(cells[1].getAttribute('style')==='grid-column:span 1', `대장소 span (${cells[1].getAttribute('style')})`);
-  ok(cells[0].getAttribute('style').includes('grid-row:span 3'), `썸네일 rowSpan (${cells[0].getAttribute('style')})`);
-  ok(cells[6].getAttribute('style')==='grid-column:span 3', `주소 span (${cells[6].getAttribute('style')})`);
+  ok(cells[1].getAttribute('style')==='grid-column:span 2', `대장소 span (${cells[1].getAttribute('style')})`);
+  ok(cells[0].getAttribute('style').includes('grid-row:span 2'), `썸네일 rowSpan (${cells[0].getAttribute('style')})`);
+  ok(cells[3].getAttribute('style')==='grid-column:span 2', `주소 span (${cells[3].getAttribute('style')})`);
+
+  // 소장소 탭 바 — 추가 버튼이 있고, 추가하면 탭이 늘어난다
+  const tabs = () => Array.from(main.querySelectorAll('.cam-tab'));
+  ok(tabs().length>=2, `소장소 탭 + 추가 버튼 렌더 (${tabs().length})`);
+  const add = tabs().find(b=>b.classList.contains('add'));
+  ok(!!add, '+ 소장소 버튼');
+  const before = tabs().length;
+  ev(add); await wait(350);
+  ok(tabs().length===before+1, `추가하면 탭이 하나 는다 (${before} → ${tabs().length})`);
+  ok(tabs().find(b=>b.classList.contains('on')&&!b.classList.contains('add')),
+     '새 소장소가 선택된 상태');
   ok(!!main.querySelector('.sketch canvas'), '상세에 스케치 캔버스 렌더');
   const { PEN_COLORS } = await import('../js/ui.js');
   const sw = main.querySelectorAll('.sk-color');
@@ -297,8 +315,9 @@ console.log('== 로케이션 개편 ==');
      `열 수 = 사진 개수 (${tiles[0].getAttribute('style')}) → 항상 한 행에 딱 맞음`);
   await V.entityListView(main,'locations',()=>{}); await wait(250);
   const ths = Array.from(main.querySelectorAll('.dtable thead th')).map(t=>(t.querySelector('span')||t).textContent);
-  ok(ths.includes('대장소') && ths.includes('소장소') && ths.includes('SET ID'), `표 헤더 ${ths.join(' / ')}`);
-  ok(ths.includes('설명'), '목록에 설명 열 추가');
+  ok(ths.includes('대장소') && ths.includes('소장소'), `표 헤더 ${ths.join(' / ')}`);
+  ok(ths.includes('주소'), '목록에 주소 열');
+  ok(!ths.includes('SET ID'), 'SET ID 는 소장소별이라 목록에서 뺀다');
   ok(!ths.includes('3D 스캔') && !ths.includes('HDRI'), '목록에서 3D 스캔 / HDRI 제거');
 }
 
@@ -380,20 +399,26 @@ console.log('== HDRI 개편 ==');
     await DB.put('hdri', rec);
   }
   await V.entityDetailView(main,'hdri',rec.id,()=>{}); await wait(350);
+  const { refIndex } = await import('../js/schema.js');
   const locs = await DB.list('locations');
+  const idx  = refIndex('locations', locs);
   const sel = Array.from(main.querySelectorAll('select.inp'))
-    .find(s => Array.from(s.options).some(o => locs.some(l => l.id === o.value)));
+    .find(s => Array.from(s.options).some(o => idx.map[o.value]));
   ok(!!sel, '로케이션 드롭다운이 Location 레코드로 채워짐');
-  ok(sel.options.length === locs.length + 1, `옵션 ${sel.options.length-1}개 = 로케이션 ${locs.length}건`);
-  sel.value = locs[0].id; ev(sel,'change'); await wait(800);
+  // 소장소 단위로 펼쳐지므로 옵션 수 = 소장소 총합
+  ok(sel.options.length === idx.opts.length + 1,
+     `옵션 ${sel.options.length-1}개 = 소장소 ${idx.opts.length}건 (로케이션 ${locs.length}건)`);
+  ok(sel.options[1].value.includes('::'), `저장값에 소장소가 들어간다 (${sel.options[1].value})`);
+  const pick = idx.opts[0].value;
+  sel.value = pick; ev(sel,'change'); await wait(800);
   const saved = await DB.get('hdri', rec.id);
-  ok(saved.locationId === locs[0].id, `id 로 저장됨 (${saved.locationId})`);
+  ok(saved.locationId === pick, `소장소까지 저장됨 (${saved.locationId})`);
 
-  // 목록에서는 id 가 아니라 이름으로 보인다
+  // 목록에서는 id 가 아니라 '대장소/소장소' 이름으로 보인다
   await V.entityListView(main,'hdri',()=>{}); await wait(300);
   const rowTxt = main.querySelector('tr.drow').textContent;
   ok(!rowTxt.includes('LOC-'), '목록에 id 노출 안 함');
-  ok(rowTxt.includes(displayName('locations', locs[0]).split(' — ')[0]), `목록에 로케이션 이름 표시: ${displayName('locations', locs[0])}`);
+  ok(rowTxt.includes(idx.label(pick).split('/')[0]), `목록에 로케이션 이름 표시: ${idx.label(pick)}`);
   const grids = () => main.querySelectorAll('.photo-grid');
   await V.entityDetailView(main,'hdri',rec.id,()=>{}); await wait(350);
   ok(grids()[0].children.length===8, `HDRI 소스 ${grids()[0].children.length}칸 렌더`);

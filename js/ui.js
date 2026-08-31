@@ -807,9 +807,12 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
     for (const f of g.fields){
       // when 이 있으면 프로젝트 상태에 따라 필드를 감춘다 (예: 에피소드는 드라마만)
       if (typeof f.when === 'function' && !f.when(ctx.project || {})) continue;
-      // cam:true 필드는 현재 캠 탭의 하위 레코드에 읽고 쓴다 (rec.cams.A.camRoll …)
-      const R = (f.cam && ctx.camRec) ? ctx.camRec : rec;
-      const cell = el('div', { class:'field' + (f.full ? ' full' : '') + (f.cam ? ' camfield' : '') });
+      // cam:true 는 현재 캠 탭(rec.cams.A.camRoll …), sub:true 는 현재 소장소 탭
+      // (rec.subs.S1.subLocation …) 의 하위 레코드에 읽고 쓴다.
+      const R = (f.cam && ctx.camRec) ? ctx.camRec
+              : (f.sub && ctx.subRec) ? ctx.subRec : rec;
+      const cell = el('div', { class:'field' + (f.full ? ' full' : '')
+                             + ((f.cam || f.sub) ? ' camfield' : '') });
       if (g.cols){
         const sp = [];
         if (f.span)    sp.push(`grid-column:span ${f.span}`);
@@ -873,19 +876,22 @@ export async function renderForm(rec, groups, entKey, onDirty, ctx = {}){
 
       } else if (f.t === 'recordRef'){
         // 다른 페이지의 레코드를 하나 고른다. id 를 저장하므로 이름을 바꿔도 연결이 유지된다.
-        const { ENTITIES, displayName } = await import('./schema.js');
+        // 로케이션처럼 소장소 탭이 있는 엔티티는 소장소 단위로 펼쳐서 고른다
+        // ('그린힐테라스/거실'). 저장값은 'LOC-001::S1'.
+        const { ENTITIES, refIndex } = await import('./schema.js');
         const sel = el('select', { class:'inp' });
         sel.appendChild(el('option', { value:'', text:'— 선택 —' }));
         // 등록 순서가 아니라 이름 가나다순으로 — 로케이션이 쌓이면 순서대로여야 찾는다
-        const list = (await DB.list(f.to)).slice().sort((a,b) =>
-          displayName(f.to, a).localeCompare(displayName(f.to, b), 'ko', { numeric:true }));
-        for (const r of list) sel.appendChild(el('option', { value:r.id, text: displayName(f.to, r) }));
-        if (R[f.k] && !list.some(r => r.id === R[f.k]))
-          sel.appendChild(el('option', { value:R[f.k], text:'(삭제된 항목)' }));
+        const idx = refIndex(f.to, await DB.list(f.to));
+        for (const o of idx.opts) sel.appendChild(el('option', { value:o.value, text:o.label }));
+        if (R[f.k] && !idx.opts.some(o => o.value === R[f.k])){
+          // 아직 마이그레이션 전이거나 지워진 소장소 — 이름을 알면 그대로 보여준다
+          sel.appendChild(el('option', { value:R[f.k], text: idx.label(R[f.k]) || '(삭제된 항목)' }));
+        }
         sel.value = R[f.k] || '';
         sel.addEventListener('change', () => { R[f.k] = sel.value; onDirty && onDirty(); });
         cell.appendChild(sel);
-        if (!list.length){
+        if (!idx.opts.length){
           cell.appendChild(el('span', { class:'dim tiny',
             text:`${ENTITIES[f.to].labelKo} 페이지에서 먼저 등록하세요.` }));
         }

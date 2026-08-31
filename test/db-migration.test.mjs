@@ -45,7 +45,7 @@ console.log('== v2 DB 준비 완료 (씬 3건, VFX 정보 2건) ==');
 
 const DB = await import('../js/db.js');
 const db = await DB.open();
-ok(db.version===8, `DB 버전 ${db.version} → 8`);
+ok(db.version===9, `DB 버전 ${db.version} → 9`);
 ok(db.objectStoreNames.contains('projects'), 'projects 스토어 생성');
 ok(db.objectStoreNames.contains('cuts'), 'cuts 스토어 생성');
 
@@ -88,8 +88,16 @@ ok(!('surveyPhotos' in l1), '서베이 사진 제거');
 ok(!('model3d' in l1) && !('seasonStart' in l1) && !('seasonEnd' in l1), '3D모델/시즌 제거');
 ok(l1.setType==='Location', '나머지 필드는 그대로');
 const l2 = locs.find(l=>l.id==='LOC-2');
-ok(l2.mainLocation==='인천' && l2.subLocation==='창고', '이미 대장소가 있으면 덮어쓰지 않음');
+// v9 부터 소장소는 subs 아래로 내려간다
+const SS = await import('../js/schema.js');
+ok(l2.mainLocation==='인천' && SS.subName('locations', l2, SS.subIds('locations', l2)[0])==='창고',
+   '이미 대장소가 있으면 덮어쓰지 않음');
 ok(!('shootLocation' in l2), 'LOC-2 도 촬영장소 제거');
+
+console.log('== v8 → v9 : 로케이션을 소장소 탭으로 ==');
+ok(locs.every(l => l.subs && Object.keys(l.subs).length), '모든 로케이션이 소장소 구조');
+ok(locs.every(l => !('subLocation' in l)), '소장소 필드는 레코드 최상단에서 제거');
+ok(l1.subs[SS.subIds('locations', l1)[0]]._fromId === 'LOC-1', '되돌릴 수 있게 원래 id 보존');
 
 console.log('== v4 → v5 : 에셋-씬 연결을 씬 쪽으로 이관 ==');
 const asset = (await DB.list('assets'))[0];
@@ -114,7 +122,11 @@ console.log('== v5 → v6 : 씬 로케이션을 Location 레코드에 연결 =='
   ok(a.legacyLocationName==='조양 체육관', `못 찾은 이름은 보존 (${a.legacyLocationName})`);
   ok(!a.locationId, '억지로 연결하지 않음');
   // '팔복사무실 구로' → 대장소 '팔복사무실' 로 앞자리 매칭
-  ok(c.locationId===loc1.id, `이름으로 Location 연결 (${c.locationId} === ${loc1.id})`);
+  // v9: 소장소까지 가리킨다 — 'LOC-1::S1'
+  ok(c.locationId.startsWith(loc1.id + '::'),
+     `이름으로 Location 연결 + 소장소까지 (${c.locationId})`);
+  ok(SS.refIndex('locations', locs2).map[c.locationId] === '팔복사무실',
+     `연결된 이름이 풀린다 (${SS.refIndex('locations', locs2).map[c.locationId]})`);
   ok(!('legacyLocationName' in c), '연결되면 임시 이름은 제거');
 
   // v8 에서 씬↔HDRI 연결 자체를 없앴다 (그 자리에 VFX 작업 타입이 들어감).

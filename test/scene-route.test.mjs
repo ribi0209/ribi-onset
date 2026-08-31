@@ -332,16 +332,27 @@ console.log('== 찍지 않은 캠은 세지 않는다 ==');
 
 console.log('== 목록의 로케이션 표기 / 노트 셀 ==');
 {
-  const { displayName } = await import('../js/schema.js');
-  const loc = { mainLocation:'조양체육관', subLocation:'2층 복도', setId:'SET-012' };
-  ok(displayName('locations', loc) === '조양체육관/2층 복도',
-     `대장소/소장소 (${displayName('locations', loc)})`);
-  ok(!displayName('locations', loc).includes('SET-012'), 'SET ID 는 빠진다');
-  ok(displayName('locations', { mainLocation:'팔복사무실' }) === '팔복사무실', '소장소가 없으면 대장소만');
+  // v9: 소장소가 레코드 안의 탭이 됐으므로 표기는 refIndex 가 만든다
+  const { displayName, subDisplayName, refIndex, ENTITIES } = await import('../js/schema.js');
+  const loc = { id:'LOC-9', mainLocation:'조양체육관', subOrder:['S1','S2'],
+                subs:{ S1:{ subLocation:'2층 복도', setId:'SET-012' },
+                       S2:{ subLocation:'' } } };
+  ok(subDisplayName('locations', loc, 'S1') === '조양체육관/2층 복도',
+     `대장소/소장소 (${subDisplayName('locations', loc, 'S1')})`);
+  ok(!subDisplayName('locations', loc, 'S1').includes('SET-012'), 'SET ID 는 빠진다');
+  ok(subDisplayName('locations', loc, 'S2') === '조양체육관',
+     '소장소 이름이 비면 대장소만 (임시 이름을 붙이지 않는다)');
+  ok(displayName('locations', loc) === '조양체육관', '레코드 자체의 이름은 대장소');
 
-  // Location 페이지 자체 목록에는 SET ID 가 그대로 있어야 한다
-  const { ENTITIES } = await import('../js/schema.js');
-  ok(ENTITIES.locations.listCols.includes('setId'), 'Location 페이지에는 SET ID 유지');
+  // 씬에서 고를 때는 소장소 단위로 펼쳐진다
+  const opts = refIndex('locations', [loc]).opts;
+  ok(opts.length === 2 && opts.some(o => o.value === 'LOC-9::S1'),
+     `드롭다운이 소장소 단위 (${opts.map(o=>o.label).join(' / ')})`);
+
+  // Location 페이지 목록은 대장소 한 줄 + 소장소 요약
+  ok(ENTITIES.locations.listCols.includes('__subs'), 'Location 목록에 소장소 열');
+  ok(!ENTITIES.locations.listCols.includes('setId'),
+     'SET ID 는 소장소별이라 목록에서 뺀다 (상세의 소장소 탭 안에 있다)');
 
   const main = w.document.getElementById('main');
   const scene = (await DB.list('scenes'))[0];

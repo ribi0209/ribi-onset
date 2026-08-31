@@ -13,7 +13,7 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 8;
+export const DB_VER  = 9;
 export const APP_ID  = 'Ribi Onset Management';
 export const APP_VER = 8;
 
@@ -181,7 +181,113 @@ async function postMigrate(){
   await migrateSceneCams();
   await migrateSceneUnitToCams();
   await repairCamUnitFanout();
+  await mergeLocationSubs();
   await dedupeSharedMedia();
+}
+
+/**
+ * 대장소가 같은 로케이션 기록들을 하나로 합치고, 각각을 소장소 탭으로 바꾼다. (v9)
+ *
+ * 전:  LOC-001 그린힐테라스/거실   LOC-002 그린힐테라스/안방   ← 별도 기록
+ * 후:  LOC-001 그린힐테라스 { subs:{ S1:거실, S2:안방 } }
+ *
+ * 씬의 locationId 는 'LOC-002' → 'LOC-001::S2' 로 다시 걸어 준다.
+ * 각 소장소에 _fromId(원래 기록 id)를 남겨 두므로 되돌릴 수 있다.
+ *
+ * 이미 subs 가 있는 기록은 건드리지 않는다 (여러 번 돌아도 안전).
+ */
+export async function mergeLocationSubs(){
+  const { ENTITIES, allFields } = await import('./schema.js');
+  const cfg = ENTITIES.locations;
+  if (!cfg || !cfg.subs) return 0;
+  const KEY = cfg.subs.key, ORDER = cfg.subs.order;
+  const subKeys = allFields('locations').filter(f => f.sub).map(f => f.k);
+
+  const locs = await listAll('locations');
+  const isFlat = (l) => !l[KEY] || !Object.keys(l[KEY]).length;
+  if (!locs.some(isFlat)) return 0;          // 이미 전부 변환됨 — 여러 번 돌아도 안전
+
+  /* 대장소 이름으로 묶는다. 이름이 비면 합칠 근거가 없으므로 각자 하나씩.
+     이미 변환된 기록이 같은 이름으로 있으면 거기에 소장소로 덧붙인다
+     (백업을 '병합'으로 가져오면 옛 포맷과 새 포맷이 섞인다). */
+  const groups = new Map();
+  for (const l of locs){
+    const name = String(l.mainLocation || '').trim();
+    const gk = name ? 'n:' + name : 'i:' + l.id;
+    if (!groups.has(gk)) groups.set(gk, []);
+    groups.get(gk).push(l);
+  }
+
+  const remap = {};            // 예전 로케이션 id → 'LOC-001::S1'
+  const drop  = [];            // 흡수돼서 지울 기록
+  let merged = 0;
+
+  for (const members of groups.values()){
+    if (members.every(m => !isFlat(m))) continue;      // 손댈 것이 없는 묶음
+    // 등록이 빠른 쪽을 살린다 — 씬이 가장 많이 걸려 있을 가능성이 높다.
+    // 단, 이미 변환된 기록이 있으면 그쪽을 살려야 기존 소장소 id 가 안 흔들린다.
+    members.sort((a,b) => String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+    const head = members.find(m => !isFlat(m)) || members[0];
+
+    const subs  = Object.assign({}, head[KEY] || {});
+    const order = (Array.isArray(head[ORDER]) ? head[ORDER] : []).filter(sid => subs[sid]);
+    for (const sid of Object.keys(subs)) if (!order.includes(sid)) order.push(sid);
+    let n = 0;
+    const newSid = () => { do { n++; } while (subs['S' + n]); return 'S' + n; };
+
+    for (const m of members){
+      if (!isFlat(m)){
+        // 이미 변환된 head 자신 — 예전 값으로 걸려 있던 연결은 첫 소장소로 보낸다
+        if (order.length) remap[m.id] = m.id + '::' + order[0];
+        continue;
+      }
+      const sid = newSid();
+      const o = { _fromId: m.id };
+      for (const k of subKeys) if (m[k] !== undefined) o[k] = m[k];
+      subs[sid] = o;
+      order.push(sid);
+      remap[m.id] = head.id + '::' + sid;
+      if (m.id !== head.id) drop.push(m.id);
+    }
+
+    // 공유 필드는 값이 있는 첫 기록에서 가져온다 (빈칸이 앞에 있어도 정보를 잃지 않게)
+    const pick = (k) => members.map(m => m[k]).find(v => v !== undefined && v !== '') || '';
+    head.mainLocation = pick('mainLocation');
+    head.setType      = pick('setType');
+    head.path         = pick('path');
+    for (const k of subKeys) delete head[k];
+    head[KEY]   = subs;
+    head[ORDER] = order;
+    await wrap(tx(['locations'],'readwrite').objectStore('locations').put(head));
+    if (members.length > 1) merged += members.length - 1;
+  }
+
+  for (const id of drop) await wrap(tx(['locations'],'readwrite').objectStore('locations').delete(id));
+
+  // 로케이션을 가리키던 모든 recordRef 를 소장소까지 가리키도록 고친다
+  let relinked = 0;
+  for (const store of RECORD_STORES){
+    const entKey  = Object.keys(ENTITIES).find(k => ENTITIES[k].store === store);
+    const grps    = entKey && ENTITIES[entKey].groups;
+    if (!grps) continue;
+    const refKeys = grps.flatMap(g => g.fields)
+                        .filter(f => f.t === 'recordRef' && f.to === 'locations')
+                        .map(f => f.k);
+    if (!refKeys.length) continue;
+    for (const rec of await listAll(store)){
+      let dirty = false;
+      for (const k of refKeys){
+        const v = rec[k];
+        if (v && remap[v] && v !== remap[v]){ rec[k] = remap[v]; dirty = true; }
+      }
+      if (dirty){
+        await wrap(tx([store],'readwrite').objectStore(store).put(rec));
+        relinked++;
+      }
+    }
+  }
+  if (merged || relinked) console.info(`[migrate] 로케이션 ${merged}건 소장소로 병합, 연결 ${relinked}건 이관`);
+  return merged;
 }
 
 /**
@@ -381,14 +487,33 @@ async function migrateAssetLinks(){
 }
 
 /** Location 레코드를 이름으로 찾는다. "대장소 소장소" 형태까지 맞춰본다. */
+/**
+ * 예전 자유 입력 문자열('팔복사무실 구로')로 Location 을 찾는다.
+ * v9 부터 소장소가 레코드 안의 탭이므로 'LOC-1::S2' 처럼 소장소까지 돌려준다.
+ * @returns {string|null} recordRef 에 넣을 값
+ */
 function matchLocation(name, locations){
   const norm = (s) => String(s || '').replace(/\s+/g,'').toLowerCase();
   const q = norm(name);
   if (!q) return null;
-  return locations.find(l => norm([l.mainLocation, l.subLocation].filter(Boolean).join('')) === q)
-      || locations.find(l => norm(l.mainLocation) === q)
-      || locations.find(l => q && norm(l.mainLocation) && q.startsWith(norm(l.mainLocation)))
-      || null;
+
+  // 대장소 + 소장소를 붙인 이름이 그대로 맞는 경우가 가장 정확하다
+  for (const l of locations){
+    const subs = l.subs || {};
+    for (const sid of Object.keys(subs)){
+      const full = norm(String(l.mainLocation||'') + String(subs[sid].subLocation||''));
+      if (full && full === q) return l.id + '::' + sid;
+    }
+    // 아직 변환 전(평면 구조)이면 예전 방식으로
+    if (!Object.keys(subs).length &&
+        norm([l.mainLocation, l.subLocation].filter(Boolean).join('')) === q) return l.id;
+  }
+  // 대장소만 맞으면 첫 소장소로 보낸다
+  const firstSid = (l) => Object.keys(l.subs || {})[0];
+  const toRef = (l) => { const sid = firstSid(l); return sid ? l.id + '::' + sid : l.id; };
+  const byMain = locations.find(l => norm(l.mainLocation) === q)
+              || locations.find(l => norm(l.mainLocation) && q.startsWith(norm(l.mainLocation)));
+  return byMain ? toRef(byMain) : null;
 }
 
 /**
@@ -419,7 +544,7 @@ export async function linkScenesToLocations(){
     if (!s.locationId && s.legacyLocationName && locations.length){
       const hit = matchLocation(s.legacyLocationName, locations.filter(l => l.projectId === s.projectId))
                || matchLocation(s.legacyLocationName, locations);
-      if (hit){ s.locationId = hit.id; delete s.legacyLocationName; dirty = true; n++; }
+      if (hit){ s.locationId = hit; delete s.legacyLocationName; dirty = true; n++; }
     }
 
     if (dirty) await wrap(tx(['scenes'],'readwrite').objectStore('scenes').put(s));
@@ -1009,6 +1134,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   // 씬의 로케이션 이름 → Location 레코드 연결, HDRI 쪽 씬 연결 → 씬으로 이관
   onProgress('연결 정리', 96);
   await linkScenesToLocations();
+  await mergeLocationSubs();      // 가져온 로케이션이 옛 평면 구조면 소장소로 접는다
   await dropSceneHdriLinks();
   await migrateSceneCams();
   await migrateSceneUnitToCams();

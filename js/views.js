@@ -6,7 +6,8 @@
 import * as DB from './db.js';
 import {
   ENTITIES, PROJECT_SCHEMA, REF_GROUPS, TAKE_FIELDS, DEFAULT_REFS, NAV, BUILD,
-  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, camFieldLine, usedCams, camValues
+  fieldMap, labelOf, displayName, allFields, thumbOf, camSummaryLine, camFieldLine, usedCams, camValues,
+  refIndex, subIds, subOf, subName, subValues, subFieldLine, subSummaryLine, nextSubId
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
@@ -96,7 +97,10 @@ export async function entityListView(root, entKey, go){
       const sel = el('select', { class:'inp mini' });
       sel.appendChild(el('option', { value:'', text:f.label }));
       const fd = fieldMap(entKey)[f.k];
-      const seen = rows.flatMap(r => fd && fd.cam ? camValues(cfg, r, f.k) : [r[f.k]]).filter(Boolean);
+      // 캠별/소장소별 필드는 하위 레코드에서 값을 긁어와야 드롭다운이 채워진다
+      const seen = rows.flatMap(r => fd && fd.cam ? camValues(cfg, r, f.k)
+                                   : fd && fd.sub ? subValues(entKey, r, f.k)
+                                   : [r[f.k]]).filter(Boolean);
       const vals = Array.from(new Set([...(refList(f.ref)||[]), ...seen]));
       for (const val of vals) sel.appendChild(el('option', { value:val, text:val }));
       sel.value = S.filters[f.k] || '';
@@ -137,12 +141,14 @@ export async function entityListView(root, entKey, go){
         const fd = fieldMap(entKey)[k];
         // 캠별 필드는 어느 한 캠이라도 일치하면 통과시킨다
         if (fd && fd.cam){ if (!camValues(cfg, r, k).includes(val)) return false; }
+        else if (fd && fd.sub){ if (!subValues(entKey, r, k).includes(val)) return false; }
         else if ((r[k] || '') !== val) return false;
       }
       if (!q) return true;
       const hay = [
         ...Object.values(r),
         ...Object.values(r.cams || {}).flatMap(d => Object.values(d || {})),
+        ...Object.values(r.subs || {}).flatMap(d => Object.values(d || {})),
       ];
       return hay.some(val => typeof val === 'string' && val.toLowerCase().includes(q));
     });
@@ -158,13 +164,19 @@ export async function entityListView(root, entKey, go){
   const refMaps = {};
   for (const k of cols){
     const f = fieldMap(entKey)[k];
-    if (f && f.t === 'recordRef'){
-      refMaps[k] = Object.fromEntries((await DB.list(f.to)).map(r => [r.id, displayName(f.to, r)]));
-    }
+    // 소장소가 있는 엔티티는 'LOC-001::S1' 이므로 refIndex 의 map 을 쓴다
+    if (f && f.t === 'recordRef') refMaps[k] = refIndex(f.to, await DB.list(f.to)).map;
   }
-  const cellText = (r, k) => k === '__cams' ? camSummaryLine(entKey, r)
-                           : k === '__vfx'  ? camFieldLine(entKey, r, 'vfxType')
-                           : refMaps[k] ? (refMaps[k][r[k]] || '') : r[k];
+  const cellText = (r, k) => {
+    if (k === '__cams') return camSummaryLine(entKey, r);
+    if (k === '__vfx')  return camFieldLine(entKey, r, 'vfxType');
+    if (k === '__subs') return subSummaryLine(entKey, r);
+    if (refMaps[k])     return refMaps[k][r[k]] || '';
+    const f = fieldMap(entKey)[k];
+    // 소장소마다 다른 값은 '거실: INT · 마당: EXT' 로 한 칸에 접어 넣는다
+    if (f && f.sub) return subFieldLine(entKey, r, k);
+    return r[k];
+  };
 
   /** 표에 보이는 문자열 기준으로 정렬한다 (로케이션은 id 가 아니라 이름으로 정렬돼야 한다).
       씬 번호 '1-1' vs '1-10' 처럼 숫자가 섞인 값은 numeric 비교로 사람이 기대하는 순서가 된다. */
@@ -361,8 +373,15 @@ function emptyOf(f){
 async function makeRecord(entKey, cfg, project, rows){
   const base = { projectId: project.id };
   for (const g of cfg.groups) for (const f of g.fields){
-    if (f.cam) continue;                    // 캠 종속 필드는 cams 아래로
+    if (f.cam || f.sub) continue;           // 캠/소장소 종속 필드는 하위 레코드로
     base[f.k] = emptyOf(f);
+  }
+  // 소장소 탭이 있는 엔티티(로케이션)는 빈 소장소 1개로 시작한다
+  if (cfg.subs){
+    const o = {};
+    for (const g of cfg.groups) for (const f of g.fields) if (f.sub) o[f.k] = emptyOf(f);
+    base[cfg.subs.key]   = { S1: o };
+    base[cfg.subs.order] = ['S1'];
   }
   // 캠 탭이 있는 엔티티는 캠별 하위 레코드를 미리 만들어 둔다
   if (Array.isArray(cfg.cams)){
@@ -438,6 +457,8 @@ export async function entityDetailView(root, entKey, id, go){
           if (!clear && !dup) continue;
           const targets = (f.cam && copy.cams)
             ? (cfg.cams || []).map(c => copy.cams[c]).filter(Boolean)
+            : (f.sub && cfg.subs)
+            ? Object.values(copy[cfg.subs.key] || {})
             : [copy];
           for (const t of targets){
             t[f.k] = clear ? emptyOf(f) : await DB.copyMedia(t[f.k]);
@@ -502,6 +523,77 @@ export async function entityDetailView(root, entKey, id, go){
     drawTabs();
     await drawForm();
     pane.append(tabBar, formHost);
+  /* ---- 소장소 탭이 있는 엔티티 (로케이션) ----
+     캠과 달리 개수가 정해져 있지 않다. 탭을 눌러 옮기고, + 로 추가하고,
+     탭 이름은 폼 안의 '소장소' 칸을 고치면 따라 바뀐다. */
+  } else if (cfg.subs){
+    if (!rec[cfg.subs.key] || typeof rec[cfg.subs.key] !== 'object') rec[cfg.subs.key] = {};
+    let ids = subIds(entKey, rec);
+    if (!ids.length){
+      // 마이그레이션 전 기록이거나 빈 기록 — 지금 값을 첫 소장소로 옮겨 담는다
+      const o = {};
+      for (const f of allFields(entKey)) if (f.sub){ o[f.k] = rec[f.k] ?? emptyOf(f); delete rec[f.k]; }
+      rec[cfg.subs.key] = { S1: o };
+      ids = ['S1'];
+      save();
+    }
+    rec[cfg.subs.order] = ids;
+
+    let active = ids[0];
+    const tabBar  = el('div', { class:'cam-tabs' });
+    const formHost = el('div', { class:'cam-body' });
+
+    async function drawForm(){
+      clear(formHost);
+      formHost.appendChild(await renderForm(rec, cfg.groups, entKey, () => { save(); drawTabs(); }, {
+        project, go, subRec: rec[cfg.subs.key][active],
+      }));
+    }
+    function drawTabs(){
+      clear(tabBar);
+      const list = subIds(entKey, rec);
+      for (const sid of list){
+        tabBar.appendChild(el('button', {
+          class:'cam-tab' + (sid === active ? ' on' : '') + (subName(entKey, rec, sid) ? ' filled' : ''),
+          onclick: async () => { if (sid === active) return; active = sid; drawTabs(); await drawForm(); },
+        }, [
+          el('b', { text: subName(entKey, rec, sid) }),
+          el('span', { class:'cam-sub', text: (subOf(entKey, rec, sid) || {}).intExt || '' }),
+        ]));
+      }
+      tabBar.appendChild(el('button', {
+        class:'cam-tab add', title:`${cfg.subs.labelKo} 추가`,
+        onclick: async () => {
+          const sid = nextSubId(entKey, rec);
+          const o = {};
+          for (const f of allFields(entKey)) if (f.sub) o[f.k] = emptyOf(f);
+          rec[cfg.subs.key][sid] = o;
+          rec[cfg.subs.order] = [...subIds(entKey, rec)];
+          active = sid; save(); drawTabs(); await drawForm();
+        },
+      }, [ el('b', { text:'+' }), el('span', { class:'cam-sub', text: cfg.subs.labelKo }) ]));
+      tabBar.appendChild(el('span', { class:'grow' }));
+      if (subIds(entKey, rec).length > 1){
+        tabBar.appendChild(el('button', {
+          class:'btn tiny danger', text:`이 ${cfg.subs.labelKo} 삭제`,
+          onclick: async () => {
+            const nm = subName(entKey, rec, active);
+            if (!await confirmBox(`${cfg.subs.labelKo} 삭제`,
+                  `'${nm}' 의 사진·스케치까지 지웁니다. 이 ${cfg.subs.labelKo}를 쓰던 씬은 연결이 끊깁니다.`,
+                  '삭제', true)) return;
+            delete rec[cfg.subs.key][active];
+            rec[cfg.subs.order] = subIds(entKey, rec);
+            active = rec[cfg.subs.order][0];
+            save(); toast(`${nm} 삭제`, 'warn'); drawTabs(); await drawForm();
+          },
+        }));
+      }
+    }
+
+    drawTabs();
+    await drawForm();
+    pane.append(tabBar, formHost);
+
   } else {
     pane.appendChild(await renderForm(rec, cfg.groups, entKey, save, { project, go }));
   }
