@@ -269,9 +269,11 @@ console.log('== 로케이션 개편 ==');
   // 소장소 탭 — 대장소가 공유하는 건 대장소·세트 타입·주소뿐
   ok(!!L.subs && L.subs.key==='subs' && L.subs.order==='subOrder', '소장소 탭 선언');
   const shared = L.groups.flatMap(g=>g.fields).filter(f=>!f.sub).map(f=>f.k);
-  ok(JSON.stringify(shared)===JSON.stringify(['mainLocation','setType','path']),
+  ok(JSON.stringify(shared)===JSON.stringify(['mainLocation','setType']),
      `대장소 공유 필드 = ${shared.join(' · ')}`);
-  ok(L.groups.flatMap(g=>g.fields).filter(f=>f.sub).length===11,
+  ok(L.groups.flatMap(g=>g.fields).find(f=>f.k==='path').sub === true,
+     '주소는 소장소별 (같은 건물이라도 동·층이 다르면 주소가 다르다)');
+  ok(L.groups.flatMap(g=>g.fields).filter(f=>f.sub).length===12,
      '나머지는 전부 소장소별');
   ok(!L.groups.some(g=>g.fields.some(f=>f.k==='shootLocation')), '촬영장소 필드 제거');
   const sk = L.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');

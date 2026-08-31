@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v39 · 2026-08-31';
+export const BUILD = 'v40 · 2026-08-31';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -304,7 +304,7 @@ export const ENTITIES = {
   /* ============ LOCATION ============ */
   locations: {
     label:'Location', labelKo:'로케이션', title:'로케이션 정보',
-    desc:'대장소 하나 아래에 소장소를 탭으로 둡니다. 주소·세트 타입은 대장소가 공유하고, 나머지는 소장소마다 따로 기록합니다.',
+    desc:'대장소 하나 아래에 소장소를 탭으로 둡니다. 장소 타입만 대장소가 공유하고, 주소를 포함한 나머지는 소장소마다 따로 기록합니다.',
     icon:'◈', store:'locations', idPrefix:'LOC',
     /* 소장소 탭 — 씬의 A~D 캠과 같은 구조지만 개수가 정해져 있지 않다.
        subOrder 가 탭 순서이고, subs[sid] 가 그 소장소의 값이다.
@@ -326,6 +326,7 @@ export const ENTITIES = {
          1행: 대장소 · 소장소 · SET ID
          2행: 장소 타입 · INT/EXT · 스캔
          3행: 주소 (남은 폭 전체)
+         대장소가 공유하는 건 대장소 이름과 장소 타입뿐이다.
          HDRI 는 전용 페이지가 따로 있어 여기서는 뺐다. */
       { title:'기본정보', cols:8, fields:[
         { k:'thumbnail',    label:'대표 이미지', t:'photo', preset:'thumb', span:2, rowSpan:3, sub:true },
@@ -335,7 +336,8 @@ export const ENTITIES = {
         { k:'setType',      label:'장소 타입', t:'select', ref:'setTypes', span:2 },
         { k:'intExt',       label:'INT/EXT',   t:'select', ref:'intExt',   span:2, sub:true },
         { k:'scan3d',       label:'스캔',      t:'select', ref:'scanOptions', span:2, sub:true },
-        { k:'path',         label:'주소',      t:'text',   span:6 },
+        // 같은 대장소라도 동/층이 다르면 주소가 달라진다 → 소장소별
+        { k:'path',         label:'주소',      t:'text',   span:6, sub:true },
       ]},
       { title:'내용', fields:[
         { k:'description', label:'설명',   t:'textarea', full:true, sub:true },

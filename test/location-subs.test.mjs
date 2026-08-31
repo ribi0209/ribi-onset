@@ -4,7 +4,7 @@
  *  1) 대장소가 같은 기록들이 한 레코드의 소장소 탭으로 합쳐진다
  *  2) 씬/HDRI 의 locationId 가 'LOC-001::S2' 로 다시 걸린다
  *  3) 두 번 돌려도 결과가 그대로다 (idempotent)
- *  4) 공유 필드(주소·세트 타입)는 값이 있는 쪽에서 살아남는다
+ *  4) 공유 필드(장소 타입)는 값이 있는 쪽에서, 주소는 소장소마다 따로 남는다
  *  5) 되돌릴 수 있게 _fromId 가 남는다
  *  6) 대장소 이름이 비면 합치지 않는다
  */
@@ -67,9 +67,9 @@ const seed = async () => {
   const put = (store, r) => DB.put(store, { projectId:p.id, ...r });
 
   await put('locations', { id:'LOC-A', mainLocation:'그린힐테라스', subLocation:'거실',
-                           intExt:'INT', setType:'', path:'', createdAt:'2026-01-01' });
+                           intExt:'INT', setType:'', path:'파주 1동 101호', createdAt:'2026-01-01' });
   await put('locations', { id:'LOC-B', mainLocation:'그린힐테라스', subLocation:'안방',
-                           intExt:'INT', setType:'Location', path:'경기도 파주',
+                           intExt:'INT', setType:'Location', path:'파주 2동 201호',
                            description:'2층', createdAt:'2026-01-02' });
   await put('locations', { id:'LOC-C', mainLocation:'조양체육관', subLocation:'',
                            intExt:'EXT', createdAt:'2026-01-03' });
@@ -96,8 +96,11 @@ ok(green.id === 'LOC-A', '먼저 등록된 쪽 id 를 유지 (LOC-A)');
 ok(S.subIds('locations', green).join(',') === 'S1,S2', '소장소 2개');
 ok(S.subName('locations', green, 'S1') === '거실' &&
    S.subName('locations', green, 'S2') === '안방', '소장소 이름이 순서대로');
-ok(green.path === '경기도 파주', '주소는 값이 있는 쪽에서 살아남는다');
-ok(green.setType === 'Location', '세트 타입도 마찬가지');
+// 주소는 소장소별 — 같은 대장소라도 동·층이 다르면 주소가 다르다
+ok(green.path === undefined, '주소는 레코드 최상단에 남지 않는다');
+ok(green.subs.S1.path === '파주 1동 101호' && green.subs.S2.path === '파주 2동 201호',
+   `소장소마다 자기 주소를 그대로 가져간다 (${green.subs.S1.path} / ${green.subs.S2.path})`);
+ok(green.setType === 'Location', '장소 타입은 공유 — 값이 있는 쪽에서 살아남는다');
 ok(green.subLocation === undefined && green.intExt === undefined,
    '소장소 필드는 레코드 최상단에서 제거');
 ok(green.subs.S2.description === '2층', '소장소 고유 값 보존');
@@ -144,6 +147,22 @@ ok(sc2['SC-2'] === 'LOC-A::S2', '재실행 후에도 씬 연결 유지');
 }
 
 
+/* ---------- 4-2. v10 : 대장소가 들고 있던 주소를 소장소로 내린다 ---------- */
+{
+  const p = await reset();
+  await DB.put('locations', { projectId:p.id, id:'LOC-P', mainLocation:'세트장',
+                              path:'인천 남동구',        // v9 까지의 공유 주소
+                              subOrder:['S1','S2'],
+                              subs:{ S1:{ subLocation:'A동' },
+                                     S2:{ subLocation:'B동', path:'인천 연수구' } } });
+  const moved = await DB.spreadLocationPath();
+  const l = await DB.get('locations','LOC-P');
+  ok(moved === 1 && !('path' in l), '레코드 최상단 주소 제거');
+  ok(l.subs.S1.path === '인천 남동구', '주소가 없던 소장소는 기존 공유 주소를 물려받는다');
+  ok(l.subs.S2.path === '인천 연수구', '이미 자기 주소가 있으면 덮어쓰지 않는다');
+  ok(await DB.spreadLocationPath() === 0, '두 번 돌려도 변화 없음');
+}
+
 /* ---------- 5. 화면 통합 (jsdom) ----------
  * 실제 현장 순서 그대로 확인한다.
  *   로케이션 상세에서 소장소 추가 → 이름 입력 → 씬 상세의 로케이션 드롭다운에 나온다
@@ -178,8 +197,9 @@ ok(sc2['SC-2'] === 'LOC-A::S2', '재실행 후에도 씬 연결 유지');
 
   const p = await reset();
   await DB.put('locations', { projectId:p.id, id:'LOC-Z', mainLocation:'그린힐테라스',
-                              setType:'Location', path:'경기도 파주',
-                              subOrder:['S1'], subs:{ S1:{ subLocation:'거실', intExt:'INT' } } });
+                              setType:'Location',
+                              subOrder:['S1'], subs:{ S1:{ subLocation:'거실', intExt:'INT',
+                                                           path:'경기도 파주' } } });
   const sc = { projectId:p.id, id:'SC-UI', scene:'1-1', cams:{ A:{}, B:{}, C:{}, D:{} } };
   await DB.put('scenes', sc);
 
@@ -198,8 +218,10 @@ ok(sc2['SC-2'] === 'LOC-A::S2', '재실행 후에도 씬 연결 유지');
 
   const savedLoc = await DB.get('locations','LOC-Z');
   ok(S.subIds('locations', savedLoc).length === 2, '저장까지 반영');
-  ok(savedLoc.mainLocation === '그린힐테라스' && savedLoc.path === '경기도 파주',
-     '대장소·주소는 소장소를 옮겨도 그대로 (공유 필드)');
+  ok(savedLoc.mainLocation === '그린힐테라스' && savedLoc.setType === 'Location',
+     '대장소·장소 타입은 소장소를 옮겨도 그대로 (공유 필드)');
+  ok(savedLoc.subs.S1.path === '경기도 파주' && !savedLoc.subs.S2.path,
+     '주소는 소장소별 — 새 소장소는 빈칸에서 시작');
   ok(savedLoc.subs.S1.intExt === 'INT' && !savedLoc.subs.S2.intExt,
      'INT/EXT 는 소장소마다 따로 (A/B 캠과 같은 방식)');
 

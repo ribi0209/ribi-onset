@@ -9,7 +9,7 @@
  * 코드를 수정하면 SHELL_VER 를 올린다.
  * 데이터는 IndexedDB 에 있으므로 캐시와 무관하다.
  */
-const SHELL_VER   = 'ribi-onset-v39';
+const SHELL_VER   = 'ribi-onset-v40';
 const ASSET_CACHE = 'ribi-onset-assets';
 const NET_TIMEOUT = 4000;   // 이 시간 안에 응답 없으면 캐시로
 

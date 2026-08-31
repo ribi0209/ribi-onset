@@ -13,7 +13,7 @@
 import { DEFAULT_REFS, ENTITIES, VFX_TYPE_MAP } from './schema.js';
 
 export const DB_NAME = 'pmt-onset';   // 내부 스토리지 키. 바꾸면 기존 기록이 유실되므로 유지한다.
-export const DB_VER  = 9;
+export const DB_VER  = 10;
 export const APP_ID  = 'Ribi Onset Management';
 export const APP_VER = 8;
 
@@ -182,6 +182,7 @@ async function postMigrate(){
   await migrateSceneUnitToCams();
   await repairCamUnitFanout();
   await mergeLocationSubs();
+  await spreadLocationPath();
   await dedupeSharedMedia();
 }
 
@@ -250,11 +251,12 @@ export async function mergeLocationSubs(){
       if (m.id !== head.id) drop.push(m.id);
     }
 
-    // 공유 필드는 값이 있는 첫 기록에서 가져온다 (빈칸이 앞에 있어도 정보를 잃지 않게)
+    /* 대장소가 공유하는 필드(대장소 이름·장소 타입)는 값이 있는 첫 기록에서 가져온다.
+       주소처럼 소장소별인 값은 위에서 이미 각 소장소에 그대로 옮겨 담았다 —
+       여기서 대표값 하나로 접으면 나머지 기록의 값이 사라진다. */
     const pick = (k) => members.map(m => m[k]).find(v => v !== undefined && v !== '') || '';
     head.mainLocation = pick('mainLocation');
     head.setType      = pick('setType');
-    head.path         = pick('path');
     for (const k of subKeys) delete head[k];
     head[KEY]   = subs;
     head[ORDER] = order;
@@ -288,6 +290,34 @@ export async function mergeLocationSubs(){
   }
   if (merged || relinked) console.info(`[migrate] 로케이션 ${merged}건 소장소로 병합, 연결 ${relinked}건 이관`);
   return merged;
+}
+
+/**
+ * 주소를 소장소별 값으로 내린다. (v10)
+ *
+ * v9 에서는 주소를 대장소가 공유한다고 봤는데, 같은 건물이라도 동·층이 다르면
+ * 주소가 달라진다. 레코드 최상단에 남아 있는 주소를 모든 소장소로 복사한 뒤 지운다.
+ * 소장소에 이미 주소가 있으면 건드리지 않는다 (여러 번 돌아도 안전).
+ */
+export async function spreadLocationPath(){
+  const { ENTITIES } = await import('./schema.js');
+  const cfg = ENTITIES.locations;
+  if (!cfg || !cfg.subs) return 0;
+  const KEY = cfg.subs.key;
+  let n = 0;
+  for (const l of await listAll('locations')){
+    if (!('path' in l)) continue;
+    const shared = l.path;
+    const subs = l[KEY] || {};
+    for (const sid of Object.keys(subs)){
+      if (!subs[sid].path && shared) subs[sid].path = shared;
+    }
+    delete l.path;
+    await wrap(tx(['locations'],'readwrite').objectStore('locations').put(l));
+    n++;
+  }
+  if (n) console.info(`[migrate] 로케이션 ${n}건의 주소를 소장소별로 분리`);
+  return n;
 }
 
 /**
@@ -1135,6 +1165,7 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   onProgress('연결 정리', 96);
   await linkScenesToLocations();
   await mergeLocationSubs();      // 가져온 로케이션이 옛 평면 구조면 소장소로 접는다
+  await spreadLocationPath();
   await dropSceneHdriLinks();
   await migrateSceneCams();
   await migrateSceneUnitToCams();
