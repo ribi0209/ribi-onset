@@ -34,7 +34,7 @@
  * ===================================================================== */
 
 /** 화면에 표시할 빌드 표기. sw.js 의 SHELL_VER 와 함께 올린다. */
-export const BUILD = 'v38 · 2026-08-31';
+export const BUILD = 'v39 · 2026-08-31';
 
 /* ---------- 기본 레퍼런스 ---------- */
 export const DEFAULT_REFS = {
@@ -314,30 +314,28 @@ export const ENTITIES = {
     titleFields:['mainLocation'], subtitleFields:[], nameSep:'/',
     thumbField:'thumbnail',
     filters:[
-      { k:'setType', ref:'setTypes', label:'세트 타입' },
+      { k:'setType', ref:'setTypes', label:'장소 타입' },
       { k:'intExt',  ref:'intExt',   label:'INT/EXT' },
-      { k:'scan3d',  ref:'scanOptions', label:'3D 스캔' },
-      { k:'hdri',    ref:'hdriOptions', label:'HDRI' },
+      { k:'scan3d',  ref:'scanOptions', label:'스캔' },
     ],
     listCols:['mainLocation','__subs','setType','intExt','path'],
     csvCols:['id','mainLocation','setType','path','subLocation','setId','intExt',
-             'scan3d','hdri','description','elements3d','usedCuts','createdAt','updatedAt'],
+             'scan3d','description','elements3d','usedCuts','createdAt','updatedAt'],
     groups:[
-      /* 8열 격자. 썸네일이 왼쪽에서 2행을 관통한다.
-         1행: 대장소 · 세트 타입 · 주소      (대장소가 공유)
-         2행: 소장소 · SET ID · INT/EXT      (소장소마다 따로) */
+      /* 8열 격자. 썸네일이 왼쪽에서 3행을 관통한다.
+         1행: 대장소 · 소장소 · SET ID
+         2행: 장소 타입 · INT/EXT · 스캔
+         3행: 주소 (남은 폭 전체)
+         HDRI 는 전용 페이지가 따로 있어 여기서는 뺐다. */
       { title:'기본정보', cols:8, fields:[
-        { k:'thumbnail',    label:'대표 이미지', t:'photo', preset:'thumb', span:2, rowSpan:2, sub:true },
-        { k:'mainLocation', label:'대장소',   t:'combo',  ref:'locations', span:2 },
-        { k:'setType',      label:'세트 타입', t:'select', ref:'setTypes',  span:2 },
-        { k:'path',         label:'주소',     t:'text',   span:2 },
-        { k:'subLocation',  label:'소장소',   t:'text',   span:2, sub:true },
-        { k:'setId',        label:'SET ID',   t:'text',   span:2, sub:true },
-        { k:'intExt',       label:'INT/EXT',  t:'select', ref:'intExt', span:2, sub:true },
-      ]},
-      { title:'데이터 취득', fields:[
-        { k:'scan3d',  label:'3D 스캔', t:'select', ref:'scanOptions', sub:true },
-        { k:'hdri',    label:'HDRI',    t:'select', ref:'hdriOptions', sub:true },
+        { k:'thumbnail',    label:'대표 이미지', t:'photo', preset:'thumb', span:2, rowSpan:3, sub:true },
+        { k:'mainLocation', label:'대장소',    t:'combo',  ref:'locations', span:2 },
+        { k:'subLocation',  label:'소장소',    t:'text',   span:2, sub:true },
+        { k:'setId',        label:'SET ID',    t:'text',   span:2, sub:true },
+        { k:'setType',      label:'장소 타입', t:'select', ref:'setTypes', span:2 },
+        { k:'intExt',       label:'INT/EXT',   t:'select', ref:'intExt',   span:2, sub:true },
+        { k:'scan3d',       label:'스캔',      t:'select', ref:'scanOptions', span:2, sub:true },
+        { k:'path',         label:'주소',      t:'text',   span:6 },
       ]},
       { title:'내용', fields:[
         { k:'description', label:'설명',   t:'textarea', full:true, sub:true },

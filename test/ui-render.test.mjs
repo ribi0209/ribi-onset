@@ -238,25 +238,40 @@ console.log('== 로케이션 개편 ==');
   const { ENTITIES } = await import('../js/schema.js');
   const L = ENTITIES.locations;
   const g0 = L.groups[0].fields.map(f=>f.k);
-  ok(JSON.stringify(g0)===JSON.stringify(['thumbnail','mainLocation','setType','path','subLocation','setId','intExt']),
+  ok(JSON.stringify(g0)===JSON.stringify(
+       ['thumbnail','mainLocation','subLocation','setId','setType','intExt','scan3d','path']),
      `기본정보 순서 ${g0.join(' → ')}`);
   ok(L.groups[0].cols===8, `기본정보 고정 ${L.groups[0].cols}열`);
+  const lb = Object.fromEntries(L.groups[0].fields.map(f=>[f.k, f.label]));
+  ok(lb.setType==='장소 타입', `세트 타입 → ${lb.setType}`);
+  ok(lb.scan3d==='스캔', `3D 스캔 → ${lb.scan3d}`);
   const sp = Object.fromEntries(L.groups[0].fields.map(f=>[f.k, f.span]));
-  // 8열: 1행 썸(2)+대장소(2)+세트타입(2)+주소(2) / 2행 썸(관통)+소장소(2)+SETID(2)+INT-EXT(2)
-  ok(sp.thumbnail+sp.mainLocation+sp.setType+sp.path===8,
-     `1행 합 8칸 (${sp.thumbnail}+${sp.mainLocation}+${sp.setType}+${sp.path})`);
-  ok(sp.thumbnail+sp.subLocation+sp.setId+sp.intExt===8,
-     `2행 합 8칸 (${sp.thumbnail}+${sp.subLocation}+${sp.setId}+${sp.intExt})`);
-  const widths = new Set([sp.mainLocation, sp.subLocation, sp.setId, sp.setType, sp.intExt, sp.path]);
+  // 8열 3줄: 썸(2)이 3행 관통 + 각 줄 6칸
+  ok(sp.thumbnail+sp.mainLocation+sp.subLocation+sp.setId===8,
+     `1행 대장소·소장소·SET ID (${sp.mainLocation}+${sp.subLocation}+${sp.setId})`);
+  ok(sp.thumbnail+sp.setType+sp.intExt+sp.scan3d===8,
+     `2행 장소 타입·INT/EXT·스캔 (${sp.setType}+${sp.intExt}+${sp.scan3d})`);
+  ok(sp.thumbnail+sp.path===8, `3행 주소가 남은 폭 전체 (${sp.path}칸)`);
+  const widths = new Set([sp.mainLocation, sp.subLocation, sp.setId, sp.setType, sp.intExt, sp.scan3d]);
   ok(widths.size===1, `입력칸 6개 폭이 모두 동일 (${[...widths]}칸)`);
-  ok(L.groups[0].fields.find(f=>f.k==='thumbnail').rowSpan===2, '썸네일이 2행 관통');
+  ok(L.groups[0].fields.find(f=>f.k==='thumbnail').rowSpan===3, '썸네일이 3행 관통');
+
+  // 데이터 취득 그룹 제거 — 스캔은 위로, HDRI 는 전용 페이지가 따로 있다
+  ok(!L.groups.some(g=>g.title==='데이터 취득'), '데이터 취득 그룹 제거');
+  ok(!L.groups.flatMap(g=>g.fields).some(f=>f.k==='hdri'), 'HDRI 칸 제거');
+  ok(!L.csvCols.includes('hdri'), 'CSV 에서도 HDRI 제외');
+  ok(L.csvCols.includes('scan3d'), '스캔은 CSV 에 유지');
+  ok(!L.filters.some(f=>f.k==='hdri') && L.filters.some(f=>f.k==='scan3d' && f.label==='스캔'),
+     '필터도 정리');
+  ok(JSON.stringify(L.groups.map(g=>g.title))===JSON.stringify(['기본정보','내용','사진']),
+     `그룹 ${L.groups.map(g=>g.title).join(' / ')}`);
 
   // 소장소 탭 — 대장소가 공유하는 건 대장소·세트 타입·주소뿐
   ok(!!L.subs && L.subs.key==='subs' && L.subs.order==='subOrder', '소장소 탭 선언');
   const shared = L.groups.flatMap(g=>g.fields).filter(f=>!f.sub).map(f=>f.k);
   ok(JSON.stringify(shared)===JSON.stringify(['mainLocation','setType','path']),
      `대장소 공유 필드 = ${shared.join(' · ')}`);
-  ok(L.groups.flatMap(g=>g.fields).filter(f=>f.sub).length===12,
+  ok(L.groups.flatMap(g=>g.fields).filter(f=>f.sub).length===11,
      '나머지는 전부 소장소별');
   ok(!L.groups.some(g=>g.fields.some(f=>f.k==='shootLocation')), '촬영장소 필드 제거');
   const sk = L.groups.find(g=>g.title==='내용').fields.find(f=>f.t==='sketch');
@@ -275,8 +290,11 @@ console.log('== 로케이션 개편 ==');
   ok(g.getAttribute('style').includes('--cols:8'), `열 수 지정 (${g.getAttribute('style')})`);
   const cells = Array.from(g.children);
   ok(cells[1].getAttribute('style')==='grid-column:span 2', `대장소 span (${cells[1].getAttribute('style')})`);
-  ok(cells[0].getAttribute('style').includes('grid-row:span 2'), `썸네일 rowSpan (${cells[0].getAttribute('style')})`);
-  ok(cells[3].getAttribute('style')==='grid-column:span 2', `주소 span (${cells[3].getAttribute('style')})`);
+  ok(cells[0].getAttribute('style').includes('grid-row:span 3'), `썸네일 rowSpan (${cells[0].getAttribute('style')})`);
+  ok(cells[7].getAttribute('style')==='grid-column:span 6', `주소 span (${cells[7].getAttribute('style')})`);
+  const labs = cells.map(c=>c.querySelector('label').textContent);
+  ok(labs.join(' · ')==='대표 이미지 · 대장소 · 소장소 · SET ID · 장소 타입 · INT/EXT · 스캔 · 주소',
+     `렌더 순서 ${labs.join(' · ')}`);
 
   // 소장소 탭 바 — 추가 버튼이 있고, 추가하면 탭이 늘어난다
   const tabs = () => Array.from(main.querySelectorAll('.cam-tab'));
