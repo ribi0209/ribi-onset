@@ -11,8 +11,10 @@ import {
 } from './schema.js';
 import {
   el, $, clear, toast, confirmBox, progress, renderForm, setRefsCache,
-  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog, errText
+  refList, nowDate, nowTime, fmtBytes, lightbox, photoTile, miniField, ocrReview, cropDialog, errText,
+  promptPassword, requireMaster, hashMaster
 } from './ui.js';
+import * as CRYPTO from './crypto.js';
 import { ingest, pickFiles } from './media.js';
 import { exportCSV, exportBreakdown, exportPrint } from './export.js';
 
@@ -350,6 +352,7 @@ export async function entityInlineView(root, entKey){
       grid,
       el('button', { class:'btn tiny danger inline-del', text:'삭제', onclick: async () => {
         const nm = cfg.titleFields.map(k=>rec[k]).filter(Boolean).join(' ') || rec.id;
+        if (!await requireMaster(`${cfg.labelKo} 삭제`)) return;
         if (!await confirmBox(`${cfg.labelKo} 삭제`, `${nm} 을(를) 삭제합니다.`, '삭제', true)) return;
         await DB.del(cfg.store, rec.id);
         rows = await DB.list(cfg.store);
@@ -470,6 +473,7 @@ export async function entityDetailView(root, entKey, id, go){
         toast('복제 완료'); go(`${entKey}/${copy.id}`);
       }}),
       el('button', { class:'btn danger', text:'삭제', onclick: async () => {
+        if (!await requireMaster(`${cfg.labelKo} 삭제`)) return;
         if (!await confirmBox(`${cfg.labelKo} 삭제`, '사진을 포함해 되돌릴 수 없습니다.', '삭제', true)) return;
         await DB.del(cfg.store, rec.id);
         toast('삭제 완료', 'warn'); go(entKey);
@@ -478,6 +482,13 @@ export async function entityDetailView(root, entKey, id, go){
   ]);
 
   const save = () => autosave(cfg.store, rec);
+  /* 탭(캠 / 소장소) 단위 마지막 수정 시각.
+     두 기기가 같은 씬의 다른 캠을 적었을 때, 병합에서 한쪽 캠이 통째로 날아가지 않도록
+     레코드 시각과 별개로 탭마다 찍어 둔다. (db.js mergeOne 이 이 값을 본다) */
+  const saveTab = (bag, key) => () => {
+    if (bag && key && bag[key]) bag[key]._u = new Date().toISOString();
+    save();
+  };
   const pane = el('div', { class:'pane single detail-page' }, [ head ]);
   root.appendChild(pane);
 
@@ -495,12 +506,12 @@ export async function entityDetailView(root, entKey, id, go){
 
     async function drawForm(){
       clear(formHost);
-      formHost.appendChild(await renderForm(rec, cfg.groups, entKey, save, {
+      formHost.appendChild(await renderForm(rec, cfg.groups, entKey, saveTab(rec.cams, active), {
         project, go, camRec: rec.cams[active],
         // 대표 이미지의 ⌁ 버튼 → 모니터 오버레이를 읽어 이 캠의 캠 롤·클립을 채운다
         onOcr: async (field, camRec, ref) => {
           const changed = await readMonitorInto(camRec, ref);
-          if (changed){ save(); drawTabs(); await drawForm(); }
+          if (changed){ saveTab(rec.cams, active)(); drawTabs(); await drawForm(); }
         },
       }));
     }
@@ -545,7 +556,8 @@ export async function entityDetailView(root, entKey, id, go){
 
     async function drawForm(){
       clear(formHost);
-      formHost.appendChild(await renderForm(rec, cfg.groups, entKey, () => { save(); drawTabs(); }, {
+      const onDirty = () => { saveTab(rec[cfg.subs.key], active)(); drawTabs(); };
+      formHost.appendChild(await renderForm(rec, cfg.groups, entKey, onDirty, {
         project, go, subRec: rec[cfg.subs.key][active],
       }));
     }
@@ -578,6 +590,7 @@ export async function entityDetailView(root, entKey, id, go){
           class:'btn tiny danger', text:`이 ${cfg.subs.labelKo} 삭제`,
           onclick: async () => {
             const nm = subName(entKey, rec, active);
+            if (!await requireMaster(`${cfg.subs.labelKo} 삭제`)) return;
             if (!await confirmBox(`${cfg.subs.labelKo} 삭제`,
                   `'${nm}' 의 사진·스케치까지 지웁니다. 이 ${cfg.subs.labelKo}를 쓰던 씬은 연결이 끊깁니다.`,
                   '삭제', true)) return;
@@ -664,6 +677,7 @@ export async function projectView(root, reload){
         reload && reload();
       }}),
       el('button', { class:'btn danger', text:'이 프로젝트 삭제', onclick: async () => {
+        if (!await requireMaster('프로젝트 삭제')) return;
         const all = await DB.listProjects();
         if (all.length <= 1){ toast('마지막 프로젝트는 삭제할 수 없습니다', 'warn'); return; }
         const c = await DB.list('scenes');
@@ -893,35 +907,134 @@ export async function backupView(root, reload){
     ? `${fmtBytes(info.usage)} / ${fmtBytes(info.quota)} (${(info.usage/info.quota*100).toFixed(1)}%)`
     : fmtBytes(info.usage);
 
-  const fileInput = el('input', { type:'file', accept:'.json,application/json', hidden:'' });
+  /* ---- 기기 표식 ---- */
+  const tagInput = el('input', { class:'inp mini', style:'width:88px', maxlength:'2',
+                                 placeholder:'예) A', value: DB.deviceTag() });
+  const tagNow = el('span', { class:'dim tiny' });
+  const drawTag = () => {
+    const t = DB.deviceTag();
+    tagNow.textContent = t ? `현재 표식 ${t} · 새 씬 id 예: PMT-${t}-20260901-…` : '표식 없음 (한 대만 쓸 때는 비워 둬도 됩니다)';
+  };
+  drawTag();
+  const tagSave = el('button', { class:'btn tiny', text:'저장', onclick: async () => {
+    const v = await DB.setDeviceTag(tagInput.value);
+    tagInput.value = v; drawTag();
+    toast(v ? `이 기기 표식: ${v}` : '표식을 비웠습니다');
+  }});
+
+  /* ---- 게스트 모드 ----
+     마스터 암호의 해시만 저장한다 (암호 자체는 어디에도 남지 않는다).
+     다시 말하지만 이건 사고 방지용이지 보안이 아니다 — 화면에도 그렇게 적어 둔다. */
+  const guestRow = el('div', { class:'row gap wrap' });
+  function drawGuest(){
+    const guest = DB.isGuest();
+    clear(guestRow);
+    guestRow.appendChild(el('span', {
+      class: guest ? 'tag t-status' : 'tag',
+      text: guest ? '게스트 모드 켜짐 — 파괴적 기능 잠김' : '게스트 모드 꺼짐 (마스터)' }));
+    guestRow.appendChild(el('button', { class:'btn tiny', text: guest ? '잠금 해제' : '게스트 모드 켜기',
+      onclick: async () => {
+        if (guest){
+          if (!await requireMaster('게스트 모드 해제')) return;
+          await DB.setGuest(false);
+          toast('마스터 모드로 전환', 'ok');
+        } else {
+          if (!DB.masterHash()){
+            const pw = await promptPassword({
+              title:'마스터 암호 설정', confirm:true, okLabel:'설정',
+              body:'게스트 모드를 해제할 때 쓸 암호입니다. 이 기기에만 저장됩니다.',
+              note:'백업 파일 암호와는 별개입니다. 사고 방지용이며 보안 수단이 아닙니다.' });
+            if (pw === null) return;
+            await DB.setMasterHash(await hashMaster(pw));
+          }
+          await DB.setGuest(true);
+          toast('게스트 모드 켜짐 — 삭제·덮어쓰기 가져오기가 잠깁니다', 'warn', 5000);
+        }
+        drawGuest(); reload && reload();
+      }}));
+    if (guest){
+      guestRow.appendChild(el('span', { class:'dim tiny',
+        text:'잠긴 기능: 프로젝트/기록/소장소 삭제 · 덮어쓰기 가져오기' }));
+    }
+  }
+  drawGuest();
+
+  const fileInput = el('input', { type:'file', accept:'.json,.ronset,application/json', hidden:'' });
   let pendingMode = 'replace';
   fileInput.addEventListener('change', async () => {
     const f = fileInput.files[0]; fileInput.value = '';
     if (!f) return;
     const p = progress(); p.set('파일 읽는 중', 3);
     try {
-      const json = JSON.parse(await f.text());
+      // 암호화 파일인지 앞 8바이트로 판별한다. 맞으면 암호를 물어본다.
+      const buf = new Uint8Array(await f.arrayBuffer());
+      let json;
+      if (CRYPTO.isEncryptedFile(buf)){
+        const { head } = CRYPTO.readHeader(buf);
+        p.done();
+        const pw = await promptPassword({
+          title:'암호화된 백업',
+          body: `${f.name}\n만든 시각 ${String(head.exportedAt || '').replace('T',' ').slice(0,16)}`
+                + (head.hint ? `\n암호 힌트: ${head.hint}` : ''),
+          okLabel:'열기',
+        });
+        if (pw === null) return;
+        p.set('복호화 중', 5);
+        json = await CRYPTO.decryptBackup(buf, pw);
+      } else {
+        json = JSON.parse(new TextDecoder().decode(buf));
+      }
+
       const s = await DB.importBackup(json, pendingMode, (m, pc) => p.set(m, pc));
       setRefsCache(await DB.getRefs());
-      toast(`가져오기 완료 · 프로젝트 ${s.projects} / 씬 ${s.scenes} / 컷 ${s.cuts} / 로케 ${s.locations} / 에셋 ${s.assets} / 이미지 ${s.media}`, 'ok', 6000);
+      const m = s.merge;
+      // 병합은 무엇이 어떻게 됐는지 반드시 알려 준다 — 조용히 덮어쓰던 게 제일 위험했다
+      const detail = (pendingMode === 'merge' && m)
+        ? ` · 추가 ${m.added} / 갱신 ${m.updated} / 내 것 유지 ${m.kept}`
+          + (m.dedupedLocations ? ` / 중복 대장소 ${m.dedupedLocations}건 정리` : '')
+        : '';
+      toast(`가져오기 완료 · 씬 ${s.scenes} / 로케 ${s.locations} / 에셋 ${s.assets} / 이미지 ${s.media}${detail}`,
+            'ok', 8000);
       reload && reload();
-    } catch (e){ toast('가져오기 실패: ' + errText(e), 'err', 6000); }
+    } catch (e){ toast('가져오기 실패: ' + errText(e), 'err', 8000); }
     finally { p.done(); }
   });
 
-  async function doExport(withMedia, scope){
+  /**
+   * @param {boolean} withMedia 이미지 포함 여부
+   * @param {string|null} scope  프로젝트 id (null = 전체)
+   * @param {boolean} encrypt    암호를 걸어 내보낼지
+   */
+  async function doExport(withMedia, scope, encrypt = false){
+    let pw = null;
+    if (encrypt){
+      pw = await promptPassword({
+        title:'암호를 걸어 내보내기',
+        body:'이 암호를 아는 사람만 파일을 열 수 있습니다. 외부 팀에 넘길 때 쓰세요.',
+        okLabel:'암호화해서 저장', confirm:true,
+        note:'암호를 잃으면 이 파일은 영구히 열 수 없습니다. 백도어가 없습니다.',
+      });
+      if (pw === null) return;
+    }
     const p = progress(); p.set('백업 생성 중', 20);
     try {
       const data = await DB.exportBackup(withMedia, scope);
-      p.set('직렬화 중', 70);
-      const blob = new Blob([JSON.stringify(data)], { type:'application/json' });
-      const tag = scope ? DB.slugOf(proj.name) : 'ALL';
-      const name = `${tag}_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.json`;
+      const tag  = scope ? DB.slugOf(proj.name) : 'ALL';
+      let blob, name;
+      if (encrypt){
+        p.set('암호화 중 (몇 초 걸립니다)', 60);
+        blob = await CRYPTO.encryptBackup(data, pw, { hint: proj.pwHint || '' });
+        name = `${tag}_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.ronset`;
+      } else {
+        p.set('직렬화 중', 70);
+        blob = new Blob([JSON.stringify(data)], { type:'application/json' });
+        name = `${tag}_온셋_${withMedia?'전체':'경량'}백업_${nowDate()}.json`;
+      }
       const a = el('a', { href: URL.createObjectURL(blob), download:name });
       document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-      toast(`${name} (${fmtBytes(blob.size)})`);
-    } catch(e){ toast('내보내기 실패: '+errText(e), 'err'); }
+      toast(`${name} (${fmtBytes(blob.size)})`, 'ok', 6000);
+    } catch(e){ toast('내보내기 실패: '+errText(e), 'err', 6000); }
     finally { p.done(); }
   }
 
@@ -931,22 +1044,54 @@ export async function backupView(root, reload){
     el('div', { class:'stats' }, statRows),
     el('p', { class:'dim tiny', text:`저장소 사용량 ${usage}` }),
 
-    el('h3', { class:'sect', text:'내보내기' }),
+    el('h3', { class:'sect', text:'내 보관용 내보내기' }),
+    el('p', { class:'dim tiny', text:'암호 없이 저장됩니다. 내 기기·내 드라이브에만 두세요.' }),
     el('div', { class:'row gap wrap' }, [
       el('button', { class:'btn primary', text:'현재 프로젝트 (이미지 포함)', onclick: () => doExport(true, proj.id) }),
       el('button', { class:'btn', text:'현재 프로젝트 (경량)', onclick: () => doExport(false, proj.id) }),
       el('button', { class:'btn ghost', text:'전체 프로젝트', onclick: () => doExport(true, null) }),
     ]),
 
+    el('h3', { class:'sect', text:'외부 전달용 내보내기 (암호)' }),
+    el('p', { class:'dim tiny', text:
+      '암호를 아는 사람만 열 수 있는 .ronset 파일로 저장합니다. 브라우저 내장 AES-GCM 으로 실제 암호화되므로, '
+      + '파일이 제3자에게 흘러도 내용을 볼 수 없습니다.' }),
+    el('div', { class:'row gap wrap' }, [
+      el('button', { class:'btn primary', text:'🔒 현재 프로젝트 (이미지 포함)',
+                     onclick: () => doExport(true, proj.id, true) }),
+      el('button', { class:'btn', text:'🔒 현재 프로젝트 (경량)',
+                     onclick: () => doExport(false, proj.id, true) }),
+    ]),
+    el('p', { class:'tiny', style:'color:var(--warn)', text:
+      '암호를 잃으면 그 파일은 영구히 열 수 없습니다. 복구 수단을 일부러 넣지 않았습니다 — '
+      + '넣는 순간 자물쇠가 아니게 되기 때문입니다. 내 보관용 백업은 따로 뽑아 두세요.' }),
+
     el('h3', { class:'sect', text:'가져오기' }),
+    el('p', { class:'dim tiny', text:
+      '암호화 파일(.ronset)은 자동으로 알아보고 암호를 물어봅니다. '
+      + '병합은 같은 기록이 양쪽에 있으면 마지막에 손댄 쪽을 남기고, 결과를 알려 줍니다.' }),
     el('div', { class:'row gap wrap' }, [
       el('button', { class:'btn', text:'덮어쓰기 가져오기', onclick: async () => {
+        if (!await requireMaster('덮어쓰기 가져오기')) return;
         if (!await confirmBox('덮어쓰기 가져오기', '이 기기의 모든 프로젝트와 기록을 지우고 파일 내용으로 교체합니다.', '진행', true)) return;
         pendingMode = 'replace'; fileInput.click();
       }}),
       el('button', { class:'btn ghost', text:'병합 가져오기', onclick: () => { pendingMode = 'merge'; fileInput.click(); } }),
     ]),
     fileInput,
+
+    el('h3', { class:'sect', text:'이 기기' }),
+    el('p', { class:'dim tiny', text:
+      '두 대 이상이 같은 프로젝트를 기록하면 표식을 서로 다르게 두세요 (예: 나 A, 외부 팀 B). '
+      + '새로 만드는 기록의 id 에 들어가 충돌을 막고, 누가 적었는지도 남습니다.' }),
+    el('div', { class:'row gap wrap' }, [ tagInput, tagSave, tagNow ]),
+
+    el('h3', { class:'sect', text:'게스트 모드' }),
+    el('p', { class:'dim tiny', text:
+      '삭제·덮어쓰기 가져오기를 마스터 암호 뒤로 숨깁니다. 하루치를 실수로 날리는 것을 막는 용도이며, '
+      + '기술적인 잠금이 아닙니다 — 앱 코드가 이 기기에서 돌기 때문에 마음먹으면 우회됩니다. '
+      + '진짜 보호가 필요한 것은 위의 파일 암호화입니다.' }),
+    guestRow,
 
     el('h3', { class:'sect', text:'유지관리' }),
     el('div', { class:'row gap wrap' }, [

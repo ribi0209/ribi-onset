@@ -84,6 +84,74 @@ export function confirmBox(title, body, okLabel = '확인', danger = false){
   });
 }
 
+/**
+ * 암호 입력창. 확인란을 켜면 두 번 입력해 오타를 막는다 (암호를 잃으면 복구가 없다).
+ * @returns {Promise<string|null>} 취소하면 null
+ */
+export function promptPassword({ title, body, okLabel = '확인', confirm = false, note = '' } = {}){
+  return new Promise(res => {
+    const close = (v) => { ov.remove(); res(v); };
+    const pw1 = el('input', { class:'inp', type:'password', placeholder:'암호',
+                              autocomplete:'off', autocapitalize:'off', spellcheck:'false' });
+    const pw2 = confirm ? el('input', { class:'inp', type:'password', placeholder:'암호 다시 입력',
+                                        autocomplete:'off', autocapitalize:'off', spellcheck:'false' }) : null;
+    const err = el('div', { class:'tiny', style:'color:var(--err);min-height:16px' });
+    const show = el('label', { class:'row gap tiny dim', style:'cursor:pointer' }, [
+      el('input', { type:'checkbox', onchange:(e) => {
+        const t = e.target.checked ? 'text' : 'password';
+        pw1.type = t; if (pw2) pw2.type = t;
+      }}),
+      document.createTextNode('암호 보기'),
+    ]);
+    const submit = () => {
+      const v = pw1.value;
+      if (!v){ err.textContent = '암호를 입력하세요.'; return; }
+      if (pw2 && v !== pw2.value){ err.textContent = '두 번 입력한 암호가 다릅니다.'; return; }
+      close(v);
+    };
+    pw1.addEventListener('keydown', (e) => { if (e.key === 'Enter') (pw2 ? pw2 : { focus:submit }).focus(); });
+    pw2 && pw2.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+    const ov = el('div', { class:'overlay', onclick:(e)=>{ if(e.target===ov) close(null); } }, [
+      el('div', { class:'dialog' }, [
+        el('h3', { text: title }),
+        body ? el('p', { class:'dim', text: body }) : null,
+        pw1, pw2, show, err,
+        note ? el('p', { class:'tiny', style:'color:var(--warn)', text: note }) : null,
+        el('div', { class:'row end gap' }, [
+          el('button', { class:'btn ghost', onclick:()=>close(null), text:'취소' }),
+          el('button', { class:'btn primary', onclick:submit, text: okLabel }),
+        ])
+      ])
+    ]);
+    document.body.appendChild(ov);
+    setTimeout(() => pw1.focus(), 30);
+  });
+}
+
+/** 마스터 암호 해시 — 암호 자체는 어디에도 저장하지 않는다 */
+export async function hashMaster(pw){
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('ribi-onset:' + String(pw)));
+  return Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join('');
+}
+
+/**
+ * 게스트 모드일 때 파괴적 동작 앞에 세우는 관문.
+ * 마스터 모드면 그냥 통과한다. 다시 말하지만 보안이 아니라 사고 방지다.
+ * @returns {Promise<boolean>} 진행해도 되는지
+ */
+export async function requireMaster(what){
+  const DB = await import('./db.js');
+  if (!DB.isGuest()) return true;
+  const want = DB.masterHash();
+  if (!want){ toast('마스터 암호가 설정돼 있지 않습니다', 'err'); return false; }
+  const pw = await promptPassword({
+    title:'마스터 암호', body:`${what} — 마스터 암호가 필요합니다.`, okLabel:'확인' });
+  if (pw === null) return false;
+  if (await hashMaster(pw) !== want){ toast('암호가 다릅니다', 'err'); return false; }
+  return true;
+}
+
 /* ---------------- 데이터리스트 (콤보 옵션) ---------------- */
 
 let REFS = {};

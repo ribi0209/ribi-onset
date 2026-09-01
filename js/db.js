@@ -34,6 +34,7 @@ export function open(){
     req.onsuccess = async () => {
       _db = req.result;
       try { await postMigrate(); } catch (e){ console.warn('postMigrate', e); }
+      try { await loadDeviceTag(); await loadGuest(); } catch (e){ console.warn('deviceTag', e); }
       res(_db);
     };
     req.onerror   = () => rej(req.error);
@@ -290,6 +291,144 @@ export async function mergeLocationSubs(){
   }
   if (merged || relinked) console.info(`[migrate] 로케이션 ${merged}건 소장소로 병합, 연결 ${relinked}건 이관`);
   return merged;
+}
+
+/* ---------------- 병합 규칙 ----------------
+ * 같은 id 의 기록이 양쪽에 있을 때 무엇을 남길지 정한다.
+ *
+ * 단순히 "updatedAt 이 최신인 쪽"으로 통째로 덮으면 탭 단위 작업이 사라진다.
+ * 예) 내가 A캠을 적는 동안 동료가 같은 씬의 B캠을 적었다면, 레코드 단위로 고르는 순간
+ *     한쪽 캠이 통째로 날아간다. 로케이션의 소장소도 마찬가지다.
+ * 그래서 탭(캠 A~D / 소장소)이 있는 엔티티는 탭별로 비교해 합친다.
+ * 탭마다 마지막 수정 시각을 _u 에 찍어 두고(폼 저장 시), 없으면 레코드 시각으로 본다.
+ */
+async function mergeOne(store, mine, theirs){
+  const { ENTITIES } = await import('./schema.js');
+  const entKey = Object.keys(ENTITIES).find(k => ENTITIES[k].store === store);
+  const cfg    = entKey ? ENTITIES[entKey] : null;
+
+  const mineU   = String(mine.updatedAt   || mine.createdAt   || '');
+  const theirsU = String(theirs.updatedAt || theirs.createdAt || '');
+  const theirsNewer = theirsU > mineU;
+
+  const tabKey = !cfg ? null
+               : cfg.subs ? cfg.subs.key
+               : Array.isArray(cfg.cams) ? 'cams' : null;
+
+  // 탭이 없으면 최신본을 통째로
+  if (!tabKey) return { rec: theirsNewer ? theirs : mine, changed: theirsNewer };
+
+  const base = theirsNewer ? { ...theirs } : { ...mine };
+  const a = mine[tabKey] || {}, b = theirs[tabKey] || {};
+  const tabs = {};
+  let changed = theirsNewer;
+
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])){
+    if (!a[k]){ tabs[k] = b[k]; changed = true; continue; }   // 상대에만 있는 탭 → 가져온다
+    if (!b[k]){ tabs[k] = a[k]; continue; }                   // 나에게만 있는 탭 → 지킨다
+    const au = String(a[k]._u || mineU), bu = String(b[k]._u || theirsU);
+    if (bu > au){ tabs[k] = b[k]; changed = true; } else tabs[k] = a[k];
+  }
+  base[tabKey] = tabs;
+
+  if (cfg.subs){
+    const order = [...(mine[cfg.subs.order] || []), ...(theirs[cfg.subs.order] || [])];
+    base[cfg.subs.order] = [...new Set(order)].filter(x => tabs[x]);
+    for (const k of Object.keys(tabs)) if (!base[cfg.subs.order].includes(k)) base[cfg.subs.order].push(k);
+  }
+  base.updatedAt = theirsU > mineU ? theirsU : mineU;
+  return { rec: base, changed };
+}
+
+/**
+ * 대장소 이름이 같은 로케이션 레코드를 하나로 합친다 (소장소 탭으로).
+ *
+ * mergeLocationSubs 는 '옛 평면 구조 → 소장소' 변환이라 이미 변환된 것끼리는 건드리지 않는다.
+ * 그런데 외부 팀 백업을 병합하면 양쪽이 각자 만든 '그린힐테라스' 레코드가 둘 생긴다.
+ * 병합 직후에만 이걸 돌려 다시 한 줄로 만든다. (앱을 열 때마다 돌리지는 않는다 —
+ * 이름이 같아도 일부러 따로 둔 경우를 조용히 합쳐 버리면 안 되므로)
+ */
+export async function dedupeLocationMains(){
+  const { ENTITIES, subIds } = await import('./schema.js');
+  const cfg = ENTITIES.locations;
+  if (!cfg || !cfg.subs) return 0;
+  const KEY = cfg.subs.key, ORDER = cfg.subs.order;
+
+  const groups = new Map();
+  for (const l of await listAll('locations')){
+    const name = String(l.mainLocation || '').trim();
+    if (!name) continue;                       // 이름이 없으면 합칠 근거가 없다
+    const gk = (l.projectId || '') + '\u0000' + name;   // 프로젝트를 넘나들며 합치지 않는다
+    if (!groups.has(gk)) groups.set(gk, []);
+    groups.get(gk).push(l);
+  }
+
+  const remap = {}, drop = [];
+  let merged = 0;
+
+  for (const members of groups.values()){
+    if (members.length < 2) continue;
+    members.sort((a,b) => String(a.createdAt||'').localeCompare(String(b.createdAt||'')));
+    const head = members[0];
+    const subs = Object.assign({}, head[KEY] || {});
+    const order = subIds('locations', head).slice();
+
+    for (const m of members.slice(1)){
+      for (const sid of subIds('locations', m)){
+        const d = m[KEY][sid];
+        // 같은 소장소 이름이 이미 있으면 그쪽으로 연결만 돌린다 (탭을 두 개 만들지 않는다)
+        const same = order.find(x => String(subs[x][cfg.subs.nameField] || '').trim() ===
+                                     String(d[cfg.subs.nameField] || '').trim() &&
+                                     String(d[cfg.subs.nameField] || '').trim() !== '');
+        if (same){
+          // 더 최근에 손댄 쪽을 남긴다
+          const au = String(subs[same]._u || head.updatedAt || '');
+          const bu = String(d._u || m.updatedAt || '');
+          if (bu > au) subs[same] = d;
+          remap[m.id + '::' + sid] = head.id + '::' + same;
+          continue;
+        }
+        let n = 1; while (subs['S' + n]) n++;
+        const nsid = 'S' + n;
+        subs[nsid] = d; order.push(nsid);
+        remap[m.id + '::' + sid] = head.id + '::' + nsid;
+      }
+      remap[m.id] = head.id + '::' + order[0];
+      drop.push(m.id);
+      merged++;
+    }
+    if (!head.setType) head.setType = members.map(m => m.setType).find(Boolean) || '';
+    head[KEY] = subs; head[ORDER] = order;
+    await wrap(tx(['locations'],'readwrite').objectStore('locations').put(head));
+  }
+  if (!merged) return 0;
+
+  for (const id of drop) await wrap(tx(['locations'],'readwrite').objectStore('locations').delete(id));
+  await relinkLocationRefs(remap);
+  console.info(`[merge] 중복 대장소 ${merged}건 정리`);
+  return merged;
+}
+
+/** 로케이션을 가리키는 모든 recordRef 를 새 값으로 옮긴다 */
+async function relinkLocationRefs(remap){
+  const { ENTITIES } = await import('./schema.js');
+  let n = 0;
+  for (const store of RECORD_STORES){
+    const entKey = Object.keys(ENTITIES).find(k => ENTITIES[k].store === store);
+    const grps = entKey && ENTITIES[entKey].groups;
+    if (!grps) continue;
+    const keys = grps.flatMap(g => g.fields)
+                     .filter(f => f.t === 'recordRef' && f.to === 'locations').map(f => f.k);
+    if (!keys.length) continue;
+    for (const rec of await listAll(store)){
+      let dirty = false;
+      for (const k of keys) if (rec[k] && remap[rec[k]] && rec[k] !== remap[rec[k]]){
+        rec[k] = remap[rec[k]]; dirty = true;
+      }
+      if (dirty){ await wrap(tx([store],'readwrite').objectStore(store).put(rec)); n++; }
+    }
+  }
+  return n;
 }
 
 /**
@@ -923,14 +1062,53 @@ export async function gcMedia(){
 function rand4(){ return Math.random().toString(16).slice(2,6).toUpperCase(); }
 function pad(n){ return String(n).padStart(2,'0'); }
 
+/* ---------------- 기기 표식 ----------------
+ * 두 대 이상이 같은 프로젝트를 기록하면(2nd 유닛, 외부 팀) id 가 겹칠 수 있다.
+ * 씬 id 는 '초 + 난수4' 라 같은 초에 둘이 씬을 만들면 1/65536 로 충돌한다.
+ * 낮지만 0 이 아니고, 충돌하면 병합할 때 한쪽이 조용히 사라진다.
+ * 기기마다 한 글자를 박아 두면 확률이 0 이 되고, 누가 기록했는지도 바로 보인다.
+ * 값은 기기 로컬(kv)이라 백업에 실려 나가지 않는다.
+ */
+/* 게스트 모드 — 파괴적 동작만 마스터 암호 뒤로 숨긴다.
+   기술적 잠금이 아니라 사고 방지용이다 (검사 코드가 이 기기에서 돌기 때문).
+   암호 자체는 저장하지 않고 SHA-256 해시만 둔다. */
+let _guest = false, _masterHash = '';
+export function isGuest(){ return _guest; }
+export function masterHash(){ return _masterHash; }
+export async function setGuest(v){ _guest = !!v; await setKV('guestMode', _guest); return _guest; }
+export async function setMasterHash(h){ _masterHash = String(h || ''); await setKV('masterHash', _masterHash); }
+async function loadGuest(){
+  _guest = !!(await getKV('guestMode', false));
+  _masterHash = String(await getKV('masterHash', '') || '');
+}
+
+let _deviceTag = '';
+export function deviceTag(){ return _deviceTag; }
+export async function loadDeviceTag(){
+  _deviceTag = String(await getKV('deviceTag', '') || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,2);
+  return _deviceTag;
+}
+export async function setDeviceTag(v){
+  _deviceTag = String(v || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,2);
+  await setKV('deviceTag', _deviceTag);
+  return _deviceTag;
+}
+/** id 에서 기기 표식을 뽑는다 — 'PMT-B-20260901-…' → 'B' */
+export function tagOfId(id){
+  const m = /^[^-]+-([A-Z0-9]{1,2})-\d{8}-/.exec(String(id || ''));
+  return m ? m[1] : '';
+}
+
 export function makeSceneId(projectName){
   const abbr = String(projectName || '').replace(/[^A-Za-z0-9가-힣]/g,'').slice(0,3).toUpperCase() || 'SCN';
   const d = new Date();
-  return `${abbr}-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-` +
+  const tag = _deviceTag ? _deviceTag + '-' : '';
+  return `${abbr}-${tag}${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-` +
          `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}-${rand4()}`;
 }
 export function makeId(prefix){
-  return `${prefix}-${(Date.now().toString(16)+rand4()).slice(-8).toUpperCase()}`;
+  const tag = _deviceTag ? _deviceTag : '';
+  return `${prefix}-${tag}${(Date.now().toString(16)+rand4()).slice(-8).toUpperCase()}`;
 }
 
 /** 파일명에 쓸 프로젝트 약칭 */
@@ -1058,6 +1236,10 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
 
   const stats = { projects:0, references:0, media:0 };
   for (const s of RECORD_STORES) stats[s] = 0;
+  /* 병합 결과 내역. 예전에는 같은 id 면 무조건 덮어썼다 —
+     동료 백업을 병합했는데 내가 나중에 고친 씬이 조용히 옛 값으로 되돌아갔다.
+     이제 updatedAt 을 비교해 최신본만 남기고, 무엇이 어떻게 됐는지 세어 둔다. */
+  const merge = { added:0, updated:0, kept:0, conflicts:[] };
 
   /* 레퍼런스 */
   if (json.references){
@@ -1128,7 +1310,18 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
       }
       if (s === 'cuts' && !Array.isArray(rec.takes)) rec.takes = [];
 
-      await wrap(tx([s],'readwrite').objectStore(s).put(rec));
+      let toPut = rec;
+      if (mode === 'merge'){
+        const cur = await wrap(tx([s]).objectStore(s).get(rec.id));
+        if (cur){
+          const r = await mergeOne(s, cur, rec);
+          if (!r.changed){ merge.kept++; done++; continue; }   // 내 것이 최신 → 그대로 둔다
+          merge.updated++;
+          toPut = r.rec;
+        } else merge.added++;
+      }
+
+      await wrap(tx([s],'readwrite').objectStore(s).put(toPut));
       stats[s]++; done++;
       if (done % 5 === 0 || done === total)
         onProgress(`${ENTITIES[s]?.label || s} ${stats[s]}건`, 8 + Math.round(done/total*88));
@@ -1171,7 +1364,13 @@ export async function importBackup(json, mode = 'replace', onProgress = () => {}
   await migrateSceneUnitToCams();
   await repairCamUnitFanout(true);   // 가져온 데이터는 플래그와 무관하게 한 번 훑는다
 
-  if (mode === 'merge'){ onProgress('미사용 이미지 정리', 98); await gcMedia(); }
+  if (mode === 'merge'){
+    onProgress('중복 대장소 정리', 97);
+    merge.dedupedLocations = await dedupeLocationMains();
+    onProgress('미사용 이미지 정리', 98);
+    await gcMedia();
+  }
+  stats.merge = merge;
   await setCurrentProject(firstPid);
   stats.media = await wrap(tx(['media']).objectStore('media').count());
   onProgress('완료', 100);
